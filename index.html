@@ -14,7 +14,7 @@
         <div>
           <p class="eyebrow">SUMMONERS WAR · GUILD TOOLS</p>
           <h1>Defence optimizer</h1>
-          <p class="lede">Find the strongest portfolio your roster can actually build.</p>
+          <p class="lede">Find strong defence options from the teams you can field.</p>
         </div>
       </header>
 
@@ -24,76 +24,138 @@
         No live SWGT requests are made.
       </div>
 
-      <section class="panel paste-panel" aria-labelledby="paste-title">
+      <section id="paste-panel" class="panel paste-panel" aria-labelledby="paste-title">
         <div class="section-heading">
           <div>
             <h2 id="paste-title">Paste defence tables</h2>
             <p>Copy the table, including its header row, and paste it here. Doubled monster labels and battle shares are cleaned up automatically.</p>
           </div>
         </div>
-        <div id="siege-paste-fields" class="paste-grid">
-          <label>Siege · 4-star defences
-            <textarea id="four-star-paste" rows="8" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea>
-          </label>
-          <label>Siege · all defences
-            <textarea id="siege-all-paste" rows="8" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea>
-          </label>
-        </div>
-        <div id="wgb-paste-fields" hidden>
-          <label>World Guild Battle · all defences
-            <textarea id="wgb-paste" rows="8" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea>
-          </label>
-        </div>
-        <div class="paste-actions">
-          <button id="import-paste" class="primary-button">Clean and import pasted tables</button>
-          <details>
-            <summary>Import normalized JSON instead</summary>
-            <label class="import-button">
-              Choose JSON file
-              <input id="data-file" type="file" accept=".json,application/json">
+        <div id="paste-fields">
+          <div id="siege-paste-fields" class="paste-grid">
+            <label>Siege · 4-star defences
+              <textarea id="four-star-paste" rows="8" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea>
             </label>
-          </details>
+            <label>Siege · all defences
+              <textarea id="siege-all-paste" rows="8" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea>
+            </label>
+          </div>
+          <div id="wgb-paste-fields" hidden>
+            <label>World Guild Battle · all defences
+              <textarea id="wgb-paste" rows="8" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea>
+            </label>
+          </div>
+          <div class="paste-actions">
+            <button id="import-paste" class="primary-button">Clean and import pasted tables</button>
+            <details>
+              <summary>Import normalized JSON instead</summary>
+              <label class="import-button">
+                Choose JSON file
+                <input id="data-file" type="file" accept=".json,application/json">
+              </label>
+            </details>
+          </div>
         </div>
         <p id="paste-result" class="hint"></p>
+      </section>
+
+      <section id="candidate-tables" class="panel" hidden aria-labelledby="candidates-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="candidates-title">Cleaned defence data</h2>
+            <p id="candidate-summary"></p>
+          </div>
+          <button id="replace-data" class="secondary-button">Replace pasted data</button>
+        </div>
+        <div id="four-star-table-section" class="defense-table-section">
+          <h3>Four-star defences</h3>
+          <div class="table-scroll"><table>
+            <thead><tr><th>Leader</th><th>Monster 2</th><th>Monster 3</th><th>Battles</th><th>WR%</th></tr></thead>
+            <tbody id="four-star-teams"></tbody>
+          </table></div>
+        </div>
+        <div id="nat-five-table-section" class="defense-table-section">
+          <h3>5-star defenses · all-defences remainder</h3>
+          <div class="table-scroll"><table>
+            <thead><tr><th>Leader</th><th>Monster 2</th><th>Monster 3</th><th>Battles</th><th>WR%</th></tr></thead>
+            <tbody id="nat-five-teams"></tbody>
+          </table></div>
+        </div>
+        <div id="wgb-table-section" class="defense-table-section" hidden>
+          <h3>World Guild Battle defences</h3>
+          <div class="table-scroll"><table>
+            <thead><tr><th>Leader</th><th>Monster 2</th><th>Monster 3</th><th>Battles</th><th>WR%</th></tr></thead>
+            <tbody id="wgb-teams"></tbody>
+          </table></div>
+        </div>
       </section>
 
       <section class="panel settings-panel" aria-labelledby="settings-title">
         <div class="section-heading">
           <div>
             <h2 id="settings-title">Optimization settings</h2>
-            <p>Every budget is solved independently; a higher budget may recommend a different build plan.</p>
+            <p>Choose the requested Siege mix (up to 10 defenses), then set the maximum copies of 4★ monsters that can be used.</p>
           </div>
         </div>
         <div class="settings-row">
           <fieldset class="mode-switch">
             <legend>Battle type</legend>
-            <label><input type="radio" name="mode" value="siege" checked> Siege · 4 + 6</label>
+            <label><input type="radio" name="mode" value="siege" checked> Siege</label>
             <label><input type="radio" name="mode" value="wgb"> World Guild Battle · 5</label>
           </fieldset>
-          <label class="budget-label" for="budget">Compare up to extra copies</label>
-          <input id="budget" type="number" min="0" max="20" value="5">
-          <button id="optimize" class="primary-button">Optimize portfolio</button>
+          <div id="siege-counts" class="siege-counts">
+            <label>4★ defenses
+              <input id="requested-four-star" type="number" min="0" max="10" value="4" aria-label="Requested 4-star defenses">
+            </label>
+            <label>5★ defenses
+              <input id="requested-nat-five" type="number" min="0" max="10" value="6" aria-label="Requested 5-star defenses">
+            </label>
+          </div>
+          <div id="copy-tabs" class="copy-tabs" role="group" aria-label="Maximum copies per 4-star monster">
+            <button type="button" data-copy-cap="1" aria-pressed="true">1 copy</button>
+            <button type="button" data-copy-cap="2" aria-pressed="false">2 copies</button>
+            <button type="button" data-copy-cap="3" aria-pressed="false">3 copies</button>
+            <button type="button" data-copy-cap="4" aria-pressed="false">4 copies</button>
+            <button type="button" data-copy-cap="5" aria-pressed="false">5 copies</button>
+          </div>
+          <label id="duplicate-team-option" class="duplicate-team-option" hidden>
+            <input id="allow-duplicate-teams" type="checkbox">
+            Allow the same exact team more than once
+          </label>
+          <button id="optimize" class="primary-button" disabled>Optimize portfolio</button>
         </div>
         <p id="mode-description" class="hint"></p>
       </section>
 
-      <section class="panel roster-panel" aria-labelledby="roster-title">
+      <section id="availability-panel" class="panel roster-panel" aria-labelledby="roster-title" hidden>
         <div class="section-heading">
           <div>
-            <h2 id="roster-title">Your roster</h2>
-            <p>Set usable copies, then allow extra lower-rarity copies you can build. Nat-five use is capped at one.</p>
+            <h2 id="roster-title">Exclude monsters you don’t have</h2>
+            <p>5★/unknown monsters appear first, then 4★-or-lower monsters. Within each group, most-used monsters appear first.</p>
           </div>
-          <button id="load-example" class="secondary-button">Load synthetic example</button>
+        </div>
+        <div class="availability-tools">
+          <input id="monster-search" type="search" placeholder="Find a monster…" aria-label="Find a monster to exclude">
+          <span id="availability-count" class="hint"></span>
+          <button id="select-all" class="secondary-button">Set all to 1 copy</button>
+          <button id="select-none" class="secondary-button">Exclude all</button>
+        </div>
+        <div class="exclude-paste">
+          <label for="exclude-list">Or paste monsters you don’t have (comma- or line-separated)</label>
+          <div>
+            <textarea id="exclude-list" rows="2" placeholder="Velaska, Craig"></textarea>
+            <button id="exclude-listed" class="secondary-button">Exclude listed monsters</button>
+          </div>
         </div>
         <div class="table-scroll">
           <table>
             <thead>
-              <tr><th>Monster</th><th>Natural stars</th><th>Usable copies</th><th>Max extra copies</th></tr>
+              <tr><th>Have it</th><th>Copies</th><th>Monster</th><th>Defences</th><th>Avg. WR</th></tr>
             </thead>
             <tbody id="roster"></tbody>
           </table>
         </div>
-        <p class="hint">Zero usable copies excludes a monster. Pasted tables do not identify natural rarity: unknown-rarity monsters cannot be duplicated until you set their rarity. Nat-five usage is capped at one.</p>
+        <p class="hint">Copies defaults to 1; set to 0 if you do not own the monster, or enter copies you already have. The selected tab sets the maximum; the optimizer reports extra copies to build.</p>
       </section>
 
       <section id="results" aria-live="polite" aria-label="Optimization results"></section>

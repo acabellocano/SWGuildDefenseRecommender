@@ -1,55 +1,7 @@
 (function () {
   "use strict";
 
-  const STORAGE_KEY = "guild-defense-optimizer-v1";
-  const example = {
-    title: "Synthetic demonstration data",
-    snapshot: "Synthetic example · no live SWGT data",
-    monsters: [
-      { id: "amber", name: "Amber", naturalStars: 4 }, { id: "brio", name: "Brio", naturalStars: 4 },
-      { id: "cinder", name: "Cinder", naturalStars: 4 }, { id: "dune", name: "Dune", naturalStars: 4 },
-      { id: "ember", name: "Ember", naturalStars: 4 }, { id: "fable", name: "Fable", naturalStars: 4 },
-      { id: "gale", name: "Gale", naturalStars: 4 }, { id: "hollis", name: "Hollis", naturalStars: 4 },
-      { id: "indigo", name: "Indigo", naturalStars: 4 }, { id: "juno", name: "Juno", naturalStars: 4 },
-      { id: "kestrel", name: "Kestrel", naturalStars: 4 }, { id: "lumen", name: "Lumen", naturalStars: 4 },
-      { id: "moss", name: "Moss", naturalStars: 4 }, { id: "nix", name: "Nix", naturalStars: 4 },
-      { id: "opal", name: "Opal", naturalStars: 4 }, { id: "pax", name: "Pax", naturalStars: 4 },
-      { id: "reed", name: "Reed", naturalStars: 4 }, { id: "sage", name: "Sage", naturalStars: 4 },
-      { id: "teal", name: "Teal", naturalStars: 4 }, { id: "ursa", name: "Ursa", naturalStars: 4 },
-      { id: "mira", name: "Mira", naturalStars: 5 }, { id: "nova", name: "Nova", naturalStars: 5 },
-      { id: "orion", name: "Orion", naturalStars: 5 }, { id: "pyra", name: "Pyra", naturalStars: 5 },
-      { id: "quill", name: "Quill", naturalStars: 5 }, { id: "rune", name: "Rune", naturalStars: 5 },
-      { id: "sol", name: "Sol", naturalStars: 5 }, { id: "talia", name: "Talia", naturalStars: 5 }
-    ],
-    teams: [
-      { leader: "amber", members: ["brio", "cinder"], winRate: 20.4, battles: 1021 },
-      { leader: "amber", members: ["dune", "ember"], winRate: 18.7, battles: 1260 },
-      { leader: "fable", members: ["gale", "hollis"], winRate: 17.8, battles: 1412 },
-      { leader: "indigo", members: ["juno", "kestrel"], winRate: 16.9, battles: 1184 },
-      { leader: "lumen", members: ["amber", "brio"], winRate: 16.2, battles: 1330 },
-      { leader: "cinder", members: ["dune", "fable"], winRate: 15.4, battles: 1099 },
-      { leader: "gale", members: ["indigo", "lumen"], winRate: 14.8, battles: 1510 },
-      { leader: "hollis", members: ["juno", "ember"], winRate: 14.1, battles: 1220 },
-      { leader: "mira", members: ["amber", "brio"], winRate: 19.2, battles: 1600 },
-      { leader: "nova", members: ["cinder", "dune"], winRate: 18.4, battles: 1482 },
-      { leader: "orion", members: ["ember", "fable"], winRate: 17.5, battles: 1307 },
-      { leader: "pyra", members: ["gale", "hollis"], winRate: 16.8, battles: 1870 },
-      { leader: "quill", members: ["indigo", "juno"], winRate: 15.9, battles: 1321 },
-      { leader: "rune", members: ["kestrel", "lumen"], winRate: 15.1, battles: 1710 },
-      { leader: "sol", members: ["amber", "dune"], winRate: 14.7, battles: 1111 },
-      { leader: "talia", members: ["brio", "ember"], winRate: 13.9, battles: 1090 },
-      { leader: "moss", members: ["nix", "opal"], winRate: 18.1, battles: 1201 },
-      { leader: "pax", members: ["reed", "sage"], winRate: 17.2, battles: 1190 },
-      { leader: "teal", members: ["ursa", "amber"], winRate: 16.4, battles: 1077 },
-      { leader: "juno", members: ["kestrel", "lumen"], winRate: 15.8, battles: 1225 },
-      { leader: "mira", members: ["moss", "nix"], winRate: 19.4, battles: 1120 },
-      { leader: "nova", members: ["opal", "pax"], winRate: 18.6, battles: 1184 },
-      { leader: "orion", members: ["reed", "sage"], winRate: 17.7, battles: 1310 },
-      { leader: "pyra", members: ["teal", "ursa"], winRate: 16.9, battles: 1420 },
-      { leader: "quill", members: ["amber", "brio"], winRate: 15.5, battles: 1095 },
-      { leader: "rune", members: ["cinder", "dune"], winRate: 14.8, battles: 1150 }
-    ]
-  };
+  const STORAGE_KEY = "guild-defense-optimizer-v2";
 
   const $ = selector => document.querySelector(selector);
   const notice = $("#notice");
@@ -60,31 +12,99 @@
     notice.className = "notice " + (isError ? "error" : "success");
   }
 
+  function makeSolverRoster(copyCap) {
+    return Object.fromEntries(state.dataset.monsters.map(monster => {
+      const copies = state.copies[monster.id] ?? 1;
+      if (monster.rosterGroup === "fourStar" && copies > 0) {
+        return [monster.id, {
+          owned: copies,
+          maxAdditional: Math.max(0, copyCap - copies),
+          maxCopies: copyCap
+        }];
+      }
+      return [monster.id, { owned: copies, maxAdditional: 0, maxCopies: copies }];
+    }));
+  }
+
   function save() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      if (state.dataset) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      else localStorage.removeItem(STORAGE_KEY);
     } catch (error) {
       showNotice("Could not save in this browser: " + error.message, true);
     }
   }
 
-  function freshExample() {
-    const dataset = GuildDefenseOptimizer.validateDataset(example);
-    const roster = {};
-    for (const monster of dataset.monsters) roster[monster.id] = { owned: 1, maxAdditional: monster.naturalStars === 5 ? 0 : 5 };
-    return { dataset, roster, mode: "siege", budget: 5 };
+  function renderInfeasibility(result, diagnostic) {
+    const section = document.createElement("div");
+    section.className = "infeasibility";
+    if (diagnostic) {
+      section.append(makeCell("h3", "Copies needed for options to appear"));
+      section.append(makeCell("p", "This portfolio becomes feasible at " + diagnostic.cap +
+        " copies per available 4★/lower monster. Additional copies to build: " +
+        formatCopies(diagnostic.result.additionalCopies) + ".", "result-summary"));
+      section.append(makeCell("p", "Select the " + diagnostic.cap + "-copy tab to see that portfolio.", "hint"));
+      return section;
+    }
+    const missing = mostBlockingUnavailableMonsters();
+    section.append(makeCell("h3", "What is blocking a complete portfolio?"));
+    if (result.status === "timed_out") {
+      section.append(makeCell("p", "The optimizer hit its search limit before it found a complete portfolio. Try a higher copy tab or adjust availability, then optimize again.", "result-summary"));
+      return section;
+    }
+    if (missing.length) {
+      section.append(makeCell("p", "These unavailable monsters block the most candidate teams: " +
+        missing.map(item => item.name + " (" + item.teams + ")").join(", ") + ".", "result-summary"));
+    }
+    if (state.mode === "siege" && state.copyCap < 5) {
+      section.append(makeCell("p", "No complete portfolio was found through the 5-copy limit. Check missing monsters or enter more usable copies.", "hint"));
+    } else {
+      section.append(makeCell("p", "No complete portfolio fits the available monsters and copy counts. Restore a missing monster or increase its copy count if you own duplicates.", "hint"));
+    }
+    return section;
+  }
+
+  function mostBlockingUnavailableMonsters() {
+    const totals = new Map();
+    for (const team of state.dataset.teams) {
+      if (state.mode === "siege" && !team.siegeCategory) continue;
+      for (const id of new Set([team.leader, ...team.memberIds])) {
+        if ((state.copies[id] ?? 1) === 0) totals.set(id, (totals.get(id) || 0) + 1);
+      }
+    }
+    return Array.from(totals, ([id, teams]) => ({
+      id,
+      teams,
+      name: state.dataset.monsters.find(monster => monster.id === id).name
+    })).sort((a, b) => b.teams - a.teams || a.name.localeCompare(b.name)).slice(0, 8);
+  }
+
+  function formatCopies(copies) {
+    const entries = Object.entries(copies);
+    if (!entries.length) return "none";
+    return entries.map(([id, count]) =>
+      state.dataset.monsters.find(monster => monster.id === id).name + " +" + count).join(", ");
   }
 
   function initialize() {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
       if (saved && saved.dataset) {
-        state = { dataset: GuildDefenseOptimizer.validateDataset(saved.dataset), roster: saved.roster || {},
-          mode: saved.mode === "wgb" ? "wgb" : "siege", budget: Number(saved.budget) || 5 };
-      } else state = freshExample();
+        const dataset = GuildDefenseOptimizer.validateDataset(saved.dataset);
+        const copies = saved.copies || Object.fromEntries(dataset.monsters.map(monster => [
+          monster.id, saved.excluded && saved.excluded[monster.id] ? 0 : 1
+        ]));
+        state = { dataset, copies, cleanedLabels: saved.cleanedLabels || 0,
+          copyCap: [1, 2, 3, 4, 5].includes(saved.copyCap) ? saved.copyCap : 1,
+          allowDuplicateTeams: saved.allowDuplicateTeams === true,
+          requestedFour: saved.requestedFour ?? 4, requestedNatFive: saved.requestedNatFive ?? 6,
+          mode: saved.mode === "wgb" ? "wgb" : "siege" };
+      } else state = { dataset: null, copies: {}, cleanedLabels: 0, copyCap: 1,
+        allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, mode: "siege" };
     } catch (error) {
-      state = freshExample();
-      showNotice("Saved data could not be loaded; the synthetic example was restored. " + error.message, true);
+      state = { dataset: null, copies: {}, cleanedLabels: 0, copyCap: 1,
+        allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, mode: "siege" };
+      showNotice("Saved data could not be loaded. Paste the tables again. " + error.message, true);
     }
     render();
   }
@@ -92,89 +112,177 @@
   function renderRoster() {
     const body = $("#roster");
     body.replaceChildren();
-    const monsters = state.dataset.monsters.slice().sort((a, b) =>
-      b.naturalStars - a.naturalStars || a.name.localeCompare(b.name));
+    if (!state.dataset) return;
+    const appearances = new Map(state.dataset.monsters.map(monster => [monster.id, { count: 0, winRateTotal: 0 }]));
+    for (const team of state.dataset.teams) {
+      for (const id of [team.leader, ...team.memberIds]) {
+        const stats = appearances.get(id);
+        stats.count++;
+        stats.winRateTotal += team.winRateBps / 100;
+      }
+    }
+    const monsters = state.dataset.monsters.map(monster => ({
+      ...monster,
+      stats: appearances.get(monster.id)
+    })).sort((a, b) =>
+      (a.rosterGroup === "fourStar" ? 1 : 0) - (b.rosterGroup === "fourStar" ? 1 : 0) ||
+      b.stats.count - a.stats.count ||
+      (b.stats.winRateTotal / b.stats.count) - (a.stats.winRateTotal / a.stats.count) ||
+      a.name.localeCompare(b.name));
+    let renderedGroup = "";
     for (const monster of monsters) {
-      const row = state.roster[monster.id] || { owned: 0, maxAdditional: 0 };
+      const group = monster.rosterGroup === "fourStar" ? "fourStar" : "unknown";
+      if (group !== renderedGroup) {
+        renderedGroup = group;
+        const heading = document.createElement("tr");
+        heading.className = "group-row";
+        heading.append(makeCell("th", group === "unknown" ? "5★ / unknown rarity" : "4★-or-lower monsters", null));
+        const remainder = document.createElement("th");
+        remainder.colSpan = 4;
+        heading.append(remainder);
+        body.append(heading);
+      }
       const tr = document.createElement("tr");
+      const available = document.createElement("td");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = (state.copies[monster.id] ?? 1) > 0;
+      checkbox.setAttribute("aria-label", "I have " + monster.name);
+      checkbox.addEventListener("change", () => {
+        state.copies[monster.id] = checkbox.checked ? 1 : 0;
+        copies.value = String(state.copies[monster.id]);
+        $("#results").replaceChildren();
+        showNotice("Copy counts changed. Optimize again to refresh the portfolio.", false);
+        save();
+        updateAvailabilityCount();
+        renderCandidateTables();
+      });
+      available.append(checkbox);
+      const copiesCell = document.createElement("td");
+      const copies = document.createElement("input");
+      copies.type = "number";
+      copies.min = "0";
+      copies.max = "99";
+      copies.step = "1";
+      copies.value = String(state.copies[monster.id] ?? 1);
+      copies.setAttribute("aria-label", "Available copies of " + monster.name);
+      copies.addEventListener("change", () => {
+        const count = Number(copies.value);
+        if (!Number.isInteger(count) || count < 0 || count > 99) {
+          showNotice("Copy counts must be whole numbers from 0 to 99.", true);
+          copies.value = String(state.copies[monster.id] ?? 1);
+          return;
+        }
+        state.copies[monster.id] = count;
+        checkbox.checked = count > 0;
+        $("#results").replaceChildren();
+        showNotice("Copy counts changed. Optimize again to refresh the portfolio.", false);
+        save();
+        updateAvailabilityCount();
+        renderCandidateTables();
+      });
+      copiesCell.append(copies);
       const name = document.createElement("td");
       name.textContent = monster.name;
-      const rarity = document.createElement("td");
-      const stars = document.createElement("select");
-      stars.className = "rarity-select";
-      stars.setAttribute("aria-label", "Natural rarity of " + monster.name);
-      for (const [value, label] of [[0, "Unknown"], [1, "1★"], [2, "2★"], [3, "3★"], [4, "4★"], [5, "5★"]]) {
-        const option = document.createElement("option");
-        option.value = String(value);
-        option.textContent = label;
-        stars.append(option);
-      }
-      stars.value = String(monster.naturalStars);
-      stars.addEventListener("change", () => {
-        monster.naturalStars = Number(stars.value);
-        if (monster.naturalStars === 0 || monster.naturalStars === 5) row.maxAdditional = 0;
-        state.roster[monster.id] = row;
-        save();
-        renderRoster();
-      });
-      rarity.append(stars);
-      const owned = makeNumberInput(row.owned, "Usable copies of " + monster.name, value => {
-        row.owned = value;
-        state.roster[monster.id] = row;
-        if (monster.naturalStars === 5) row.maxAdditional = 0;
-        save();
-        renderRoster();
-      });
-      const additional = makeNumberInput(row.maxAdditional, "Maximum extra copies of " + monster.name,
-        value => { row.maxAdditional = value; state.roster[monster.id] = row; save(); });
-      if (monster.naturalStars === 0 || monster.naturalStars === 5) {
-        additional.value = "0";
-        additional.disabled = true;
-      }
-      const ownedCell = document.createElement("td");
-      const additionalCell = document.createElement("td");
-      ownedCell.append(owned);
-      additionalCell.append(additional);
-      tr.append(name, rarity, ownedCell, additionalCell);
+      const count = monster.stats.count;
+      const average = count ? monster.stats.winRateTotal / count : 0;
+      tr.append(available, copiesCell, name,
+        makeCell("td", String(count)),
+        makeCell("td", count ? average.toFixed(2) + "%" : "—"));
       body.append(tr);
     }
-  }
-
-  function makeNumberInput(value, label, update) {
-    const input = document.createElement("input");
-    input.type = "number";
-    input.min = "0";
-    input.max = "99";
-    input.step = "1";
-    input.value = String(value);
-    input.setAttribute("aria-label", label);
-    input.addEventListener("change", () => {
-      const count = Number(input.value);
-      if (!Number.isInteger(count) || count < 0 || count > 99) {
-        showNotice("Copy counts must be whole numbers from 0 to 99.", true);
-        input.value = String(value);
-        return;
-      }
-      update(count);
-    });
-    return input;
+    $("#roster thead").replaceChildren();
+    const header = document.createElement("tr");
+    for (const label of ["Available", "Copies", "Monster", "Defences", "Avg. WR"]) header.append(makeCell("th", label));
+    $("#roster").closest("table").querySelector("thead").replaceChildren(header);
+    filterMonsterList();
+    updateAvailabilityCount();
   }
 
   function render() {
-    renderRoster();
+    const hasData = Boolean(state.dataset);
+    $("#paste-fields").hidden = hasData;
+    $("#paste-panel").hidden = hasData;
+    $("#candidate-tables").hidden = !hasData;
+    $("#availability-panel").hidden = !hasData;
+    $("#optimize").disabled = !hasData;
     document.querySelector('input[name="mode"][value="' + state.mode + '"]').checked = true;
-    $("#budget").value = String(state.budget);
     $("#mode-description").textContent = state.mode === "siege"
-      ? "Siege selects four teams from the pasted 4-star table and six from all-defences after removing those exact teams."
-      : "World Guild Battle selects five teams from the pasted list, with no rarity quota.";
-    if (state.dataset.mode && state.dataset.mode !== state.mode) {
-      $("#paste-result").textContent = "The currently loaded " + state.dataset.mode.toUpperCase() +
-        " data does not match the selected mode. Paste and import data for this mode before optimizing.";
-    }
+      ? "Requests up to ten total defenses from the two pasted lists. If the requested mix is unavailable, the closest match is shown with options to fill any remaining slots."
+      : "Builds five teams from the pasted list without a rarity split.";
+    $("#siege-counts").hidden = state.mode !== "siege";
+    $("#requested-four-star").value = String(state.requestedFour);
+    $("#requested-nat-five").value = String(state.requestedNatFive);
     $("#siege-paste-fields").hidden = state.mode !== "siege";
     $("#wgb-paste-fields").hidden = state.mode !== "wgb";
+    document.querySelectorAll('input[name="mode"]').forEach(input => { input.disabled = hasData; });
+    document.querySelectorAll("[data-copy-cap]").forEach(button => {
+      button.hidden = !hasData || state.mode !== "siege" || state.dataset.mode !== "siege";
+      button.setAttribute("aria-pressed", String(Number(button.dataset.copyCap) === (state.copyCap || 1)));
+      button.classList.toggle("selected", Number(button.dataset.copyCap) === (state.copyCap || 1));
+    });
+    $("#copy-tabs").hidden = !hasData || state.mode !== "siege" || state.dataset.mode !== "siege";
+    $("#duplicate-team-option").hidden = !hasData;
+    $("#allow-duplicate-teams").checked = state.allowDuplicateTeams;
+    $("#four-star-table-section").hidden = !hasData || state.dataset.mode !== "siege";
+    $("#nat-five-table-section").hidden = !hasData || state.dataset.mode !== "siege";
+    $("#wgb-table-section").hidden = !hasData || state.dataset.mode !== "wgb";
+    if (hasData) {
+      renderCandidateTables();
+      renderRoster();
+    }
     $("#results").replaceChildren();
     save();
+  }
+
+  function renderCandidateTables() {
+    if (!state.dataset) return;
+    const available = team => [team.leader, ...team.memberIds].every(id => (state.copies[id] ?? 1) > 0);
+    const allFourStar = state.dataset.teams.filter(team => team.siegeCategory === "fourStar");
+    const allNatFive = state.dataset.teams.filter(team => team.siegeCategory === "natFive");
+    const fourStar = allFourStar.filter(available);
+    const natFive = allNatFive.filter(available);
+    const wgb = state.dataset.teams.filter(available);
+    $("#candidate-summary").textContent = state.dataset.mode === "siege"
+      ? fourStar.length + "/" + allFourStar.length + " four-star teams; " +
+        natFive.length + "/" + allNatFive.length + " remaining all-defences teams available; " +
+        "requested " + state.requestedFour + " 4★ + " + state.requestedNatFive + " 5★."
+      : wgb.length + "/" + state.dataset.teams.length + " World Guild Battle teams available.";
+    if (state.cleanedLabels) $("#candidate-summary").textContent += " " + state.cleanedLabels + " doubled labels cleaned.";
+    renderDefenseTable("#four-star-teams", fourStar);
+    renderDefenseTable("#nat-five-teams", natFive);
+    renderDefenseTable("#wgb-teams", wgb);
+  }
+
+  function renderDefenseTable(selector, teams) {
+    const body = $(selector);
+    body.replaceChildren();
+    const sortedTeams = teams.slice().sort((a, b) =>
+      b.winRateBps - a.winRateBps || b.battles - a.battles || a.id.localeCompare(b.id));
+    for (const team of sortedTeams) {
+      const row = document.createElement("tr");
+      const names = [team.leader, ...team.memberIds].map(id =>
+        state.dataset.monsters.find(monster => monster.id === id).name);
+      for (const name of names) row.append(makeCell("td", name));
+      row.append(makeCell("td", team.battles.toLocaleString()));
+      row.append(makeCell("td", (team.winRateBps / 100).toFixed(2) + "%"));
+      body.append(row);
+    }
+  }
+
+  function filterMonsterList() {
+    const term = $("#monster-search").value.trim().toLocaleLowerCase();
+    for (const row of $("#roster").rows) {
+      if (!row.classList.contains("group-row")) {
+        row.hidden = !row.cells[2].textContent.toLocaleLowerCase().includes(term);
+      }
+    }
+  }
+
+  function updateAvailabilityCount() {
+    if (!state.dataset) return;
+    const available = state.dataset.monsters.filter(monster => (state.copies[monster.id] ?? 1) > 0).length;
+    $("#availability-count").textContent = available + " of " + state.dataset.monsters.length + " monsters available";
   }
 
   function makeCell(tag, text, className) {
@@ -184,33 +292,44 @@
     return element;
   }
 
-  function renderResult(result, budget, baseline) {
+  function renderResult(result, diagnostic, suggestions) {
     const card = document.createElement("article");
     card.className = "result-card";
-    const statusText = result.status === "optimal" ? "Optimal" : result.status === "timed_out" ? "Best found · not proven" : "Infeasible";
-    card.append(makeCell("h2", "Up to " + budget + " extra " + (budget === 1 ? "copy" : "copies")));
-    card.append(makeCell("p", result.status === "infeasible" ? result.reason :
-      state.dataset.snapshot + " · " + result.reason, "result-summary"));
-    const status = makeCell("span", statusText, "status-pill" + (result.status !== "optimal" ? " warning" : ""));
-    card.append(status);
-    if (result.status === "infeasible") return card;
+    const requestedTotal = result.requested ? result.requested.fourStar + result.requested.natFive : null;
+    const partial = requestedTotal !== null && result.teams.length < requestedTotal;
+    const statusText = partial ? "Closest match" : result.status === "optimal" ? "Optimal" : result.status === "timed_out"
+      ? result.teams.length ? "Best found · not proven" : "Search limit reached" : "Infeasible";
+    card.append(makeCell("h2", "Optimized defence options"));
+    card.append(makeCell("p", state.dataset.snapshot + " · " + result.reason, "result-summary"));
+    card.append(makeCell("span", statusText, "status-pill" +
+      (result.status !== "optimal" || partial ? " warning" : "")));
+    if (!result.teams.length) {
+      card.append(renderInfeasibility(result, diagnostic));
+      return card;
+    }
 
     const stats = document.createElement("div");
     stats.className = "result-stats";
     stats.append(stat("Average win rate", result.averageWinRate.toFixed(2) + "%"));
-    stats.append(stat("Gain vs. zero", baseline ? signed((result.averageWinRate - baseline.averageWinRate)) + " pp" : "—"));
-    stats.append(stat("Extra copies used", String(result.additionalCopyCount)));
-    stats.append(stat("Search", result.nodes.toLocaleString() + " nodes"));
+    stats.append(stat("Defences selected", String(result.teams.length)));
+    stats.append(stat("Monsters excluded", String(state.dataset.monsters.length -
+      state.dataset.monsters.filter(monster => (state.copies[monster.id] ?? 1) > 0).length)));
     card.append(stats);
+    if (result.requested) {
+      const foundFour = result.groups.find(group => group.key === "fourStar").teams.length;
+      const foundNatFive = result.groups.find(group => group.key === "natFive").teams.length;
+      const missingFour = Math.max(0, result.requested.fourStar - foundFour);
+      const missingNatFive = Math.max(0, result.requested.natFive - foundNatFive);
+      card.append(makeCell("p", "Requested " + result.requested.fourStar + " 4★ + " +
+        result.requested.natFive + " 5★; found " + foundFour + " + " + foundNatFive +
+        (missingFour || missingNatFive ? ". Missing " + missingFour + " 4★ and " + missingNatFive + " 5★." : "."),
+        "result-summary"));
+    }
+    if (result.additionalCopyCount) {
+      card.append(makeCell("p", "Additional copies to build: " + formatCopies(result.additionalCopies) + ".",
+        "builds"));
+    }
 
-    const builds = document.createElement("p");
-    builds.className = "builds";
-    const entries = Object.entries(result.additionalCopies).map(([id, count]) => {
-      const monster = state.dataset.monsters.find(item => item.id === id);
-      return monster.name + " +" + count;
-    });
-    builds.textContent = "Builds: " + (entries.length ? entries.join(", ") : "none");
-    card.append(builds);
     const list = document.createElement("div");
     list.className = "team-list";
     const teams = result.groups ? result.groups.flatMap(group => group.teams.map(team => ({ ...team, category: group.key }))) :
@@ -222,12 +341,45 @@
         state.dataset.monsters.find(monster => monster.id === id).name);
       tile.append(makeCell("div", (index + 1) + ". " + names.join(" / "), "team-name"));
       tile.append(makeCell("div",
-        (team.category === "fourStar" ? "4★-only" : team.category === "natFive" ? "Contains nat-five" : "WGB") +
+        (team.category === "fourStar" ? "4-star list" : team.category === "natFive" ? "All-defences remainder" : "WGB") +
         " · " + (team.winRateBps / 100).toFixed(2) + "% · " + team.battles.toLocaleString() + " battles",
         "team-meta"));
       list.append(tile);
     });
     card.append(list);
+    const remaining = result.requested
+      ? Math.max(0, result.requested.fourStar + result.requested.natFive - result.teams.length)
+      : 0;
+    if (remaining) {
+      const extra = document.createElement("section");
+      extra.className = "infeasibility";
+      const availableSuggestions = suggestions || [];
+      extra.append(makeCell("h3", availableSuggestions.length
+        ? "Suggested defenses to fill the remaining " + remaining + " slot(s)"
+        : "No eligible defenses found for the remaining " + remaining + " slot(s)"));
+      if (availableSuggestions.length) {
+        const fillList = document.createElement("div");
+        fillList.className = "team-list";
+        availableSuggestions.forEach((team, index) => {
+          const tile = document.createElement("div");
+          tile.className = "team suggested-team";
+          const names = [team.leader, ...team.memberIds].map(id =>
+            state.dataset.monsters.find(monster => monster.id === id).name);
+          tile.append(makeCell("div", "Suggestion " + (index + 1) + ". " + names.join(" / "), "team-name"));
+          tile.append(makeCell("div",
+            (team.siegeCategory === "fourStar" ? "4-star list" : "All-defences remainder") +
+            " · " + (team.winRateBps / 100).toFixed(2) + "% · " + team.battles.toLocaleString() + " battles",
+            "team-meta"));
+          fillList.append(tile);
+        });
+        extra.append(fillList);
+      }
+      if (availableSuggestions.length < remaining) {
+        extra.append(makeCell("p", (remaining - availableSuggestions.length) +
+          " slot(s) still cannot be filled with the current roster and copy limits.", "hint"));
+      }
+      card.append(extra);
+    }
     return card;
   }
 
@@ -238,44 +390,44 @@
     return wrapper;
   }
 
-  function signed(value) {
-    return (value >= 0 ? "+" : "") + value.toFixed(2);
-  }
-
   async function optimize() {
-    if (state.dataset.mode && state.dataset.mode !== state.mode) {
+    if (!state.dataset || state.dataset.mode !== state.mode) {
       showNotice("Paste and import candidate data for the selected battle type first.", true);
       return;
     }
-    const budget = Number($("#budget").value);
-    if (!Number.isInteger(budget) || budget < 0 || budget > 20) {
-      showNotice("The comparison budget must be a whole number from 0 to 20.", true);
+    if (state.mode === "siege" && (!Number.isInteger(state.requestedFour) ||
+        !Number.isInteger(state.requestedNatFive) || state.requestedFour < 0 ||
+        state.requestedNatFive < 0 || state.requestedFour + state.requestedNatFive > 10)) {
+      showNotice("Requested Siege defenses must be whole numbers totaling no more than 10.", true);
       return;
     }
-    state.mode = document.querySelector('input[name="mode"]:checked').value;
-    state.budget = budget;
-    save();
+    const roster = makeSolverRoster(state.copyCap);
     $("#optimize").disabled = true;
     $("#results").replaceChildren(makeCell("p", "Searching eligible portfolios…", "empty"));
+    showNotice("Searching defence combinations…", false);
     try {
-      const results = [];
-      const maxMs = 1200;
-      for (let limit = 0; limit <= budget; limit++) {
-        const result = GuildDefenseOptimizer.solve(state.dataset, state.roster, state.mode, limit, { timeLimitMs: maxMs });
-        results.push(result);
-        const baseline = results[0].status !== "infeasible" ? results[0] : null;
-        $("#results").replaceChildren(...results.map((item, index) =>
-          renderResult(item, index, baseline)));
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
-      const last = results[results.length - 1];
-      showNotice(last.status === "infeasible" ? "No feasible portfolio found for the selected budget." :
-        "Comparison complete. Results are independent optima for each up-to budget.", last.status === "infeasible");
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const solveOptions = { timeLimitMs: 5000, allowDuplicateTeams: state.allowDuplicateTeams };
+      const result = state.mode === "siege"
+        ? GuildDefenseOptimizer.solveClosest(state.dataset, roster, state.mode, 30, {
+          ...solveOptions, requirements: { fourStar: state.requestedFour, natFive: state.requestedNatFive }
+        })
+        : GuildDefenseOptimizer.solve(state.dataset, roster, state.mode, 30, solveOptions);
+      const suggestions = state.mode === "siege" && result.teams.length
+        ? GuildDefenseOptimizer.suggestFillTeams(state.dataset, result, roster,
+          state.requestedFour + state.requestedNatFive, 30, solveOptions) : [];
+      $("#results").replaceChildren(renderResult(result, null, suggestions));
+      const partial = result.requested &&
+        result.teams.length < result.requested.fourStar + result.requested.natFive;
+      showNotice(result.status === "infeasible" ? "No defense can be built with the current copy counts." :
+        result.status === "timed_out" ? "A feasible portfolio was found, but optimality was not proven." :
+          partial ? "Closest available defense mix found. See the missing categories and fill suggestions below." :
+            "Defence options optimized for the selected copy limit.", result.status !== "optimal" || partial);
     } catch (error) {
       showNotice("Optimization failed: " + error.message, true);
       $("#results").replaceChildren();
     } finally {
-      $("#optimize").disabled = false;
+      $("#optimize").disabled = !state.dataset || state.dataset.mode !== state.mode;
     }
   }
 
@@ -285,15 +437,13 @@
     try {
       const parsed = JSON.parse(await file.text());
       const dataset = GuildDefenseOptimizer.validateDataset(parsed);
-      const roster = {};
-      for (const monster of dataset.monsters) {
-        roster[monster.id] = state.roster[monster.id] || { owned: 0, maxAdditional: 0 };
-      }
+      if (!dataset.mode) dataset.mode = state.mode;
       state.dataset = dataset;
-      state.roster = roster;
+      state.copies = Object.fromEntries(dataset.monsters.map(monster => [monster.id, 1]));
+      state.cleanedLabels = 0;
       $("#results").replaceChildren();
       render();
-      showNotice("Imported " + dataset.teams.length + " teams. Set usable copies for this roster before optimizing.", false);
+      showNotice("Imported " + dataset.teams.length + " defences. All listed monsters start marked available.", false);
     } catch (error) {
       showNotice("Import failed: " + error.message, true);
     } finally {
@@ -305,42 +455,105 @@
       const imported = GuildDefenseOptimizer.datasetFromPastedTables(state.mode === "siege"
         ? { mode: state.mode, fourStarText: $("#four-star-paste").value, allText: $("#siege-all-paste").value }
         : { mode: state.mode, allText: $("#wgb-paste").value });
-      const roster = {};
-      for (const monster of imported.dataset.monsters) {
-        roster[monster.id] = state.roster[monster.id] || { owned: 0, maxAdditional: 0 };
-      }
       state.dataset = GuildDefenseOptimizer.validateDataset(imported.dataset);
-      state.roster = roster;
+      state.copies = Object.fromEntries(imported.dataset.monsters.map(monster => [monster.id, 1]));
+      state.cleanedLabels = imported.cleanedLabels;
       $("#results").replaceChildren();
       render();
-      const cleanup = imported.cleanedLabels + " doubled labels cleaned";
       const counts = state.mode === "siege"
         ? imported.fourStarCount + " four-star teams + " + imported.natFiveCount + " remaining all-defences teams"
         : imported.natFiveCount + " WGB teams";
-      $("#paste-result").textContent = "Imported " + counts + "; " + cleanup + ". Set usable copies and confirm natural rarity below.";
-      showNotice("Paste cleaned and imported. New monster copies default to zero.", false);
+      $("#paste-result").textContent = "Imported " + counts + ". All " +
+        imported.dataset.monsters.length + " unique monsters start available.";
+      showNotice("Paste cleaned and imported. Exclude the monsters you don't have, then optimize.", false);
     } catch (error) {
       showNotice("Paste import failed: " + error.message, true);
       $("#paste-result").textContent = error.message;
     }
   });
-  $("#load-example").addEventListener("click", () => {
-    state = freshExample();
+  $("#replace-data").addEventListener("click", () => {
+    state.dataset = null;
+    state.copies = {};
+    state.cleanedLabels = 0;
+    $("#results").replaceChildren();
+    $("#paste-result").textContent = "";
     render();
-    showNotice("Synthetic demo data loaded. Replace it and enter your own roster before using recommendations.", false);
   });
   $("#optimize").addEventListener("click", optimize);
+  $("#allow-duplicate-teams").addEventListener("change", () => {
+    state.allowDuplicateTeams = $("#allow-duplicate-teams").checked;
+    $("#results").replaceChildren();
+    save();
+    optimize();
+  });
+  document.querySelectorAll("[data-copy-cap]").forEach(button => button.addEventListener("click", () => {
+    state.copyCap = Number(button.dataset.copyCap);
+    document.querySelectorAll("[data-copy-cap]").forEach(option => {
+      const selected = option === button;
+      option.setAttribute("aria-pressed", String(selected));
+      option.classList.toggle("selected", selected);
+    });
+    $("#results").replaceChildren();
+    save();
+    optimize();
+  }));
   document.querySelectorAll('input[name="mode"]').forEach(input => input.addEventListener("change", () => {
     state.mode = input.value;
     save();
     render();
   }));
-  $("#budget").addEventListener("change", () => {
-    const value = Number($("#budget").value);
-    if (Number.isInteger(value) && value >= 0 && value <= 20) {
-      state.budget = value;
+  for (const [selector, key] of [
+    ["#requested-four-star", "requestedFour"],
+    ["#requested-nat-five", "requestedNatFive"]
+  ]) {
+    $(selector).addEventListener("change", event => {
+      const raw = event.target.value.trim();
+      const value = Number(raw);
+      const proposed = { requestedFour: state.requestedFour, requestedNatFive: state.requestedNatFive };
+      proposed[key] = value;
+      if (!raw || !Number.isInteger(value) || value < 0 ||
+          proposed.requestedFour + proposed.requestedNatFive > 10) {
+        event.target.value = String(state[key]);
+        showNotice("Requested Siege defenses must be whole numbers totaling no more than 10.", true);
+        return;
+      }
+      state[key] = value;
+      $("#results").replaceChildren();
+      renderCandidateTables();
       save();
+      showNotice("Requested defense counts updated. Optimize to refresh the portfolio.", false);
+    });
+  }
+  $("#monster-search").addEventListener("input", filterMonsterList);
+  $("#select-all").addEventListener("click", () => {
+    state.copies = Object.fromEntries(state.dataset.monsters.map(monster => [monster.id, 1]));
+    renderRoster();
+    renderCandidateTables();
+    $("#results").replaceChildren();
+    save();
+  });
+  $("#select-none").addEventListener("click", () => {
+    state.copies = Object.fromEntries(state.dataset.monsters.map(monster => [monster.id, 0]));
+    renderRoster();
+    renderCandidateTables();
+    $("#results").replaceChildren();
+    save();
+  });
+  $("#exclude-listed").addEventListener("click", () => {
+    const names = $("#exclude-list").value.split(/[\n,;]+/).map(name => name.trim()).filter(Boolean);
+    const byName = new Map(state.dataset.monsters.map(monster => [monster.name.toLocaleLowerCase(), monster]));
+    const missing = [];
+    for (const name of names) {
+      const monster = byName.get(name.toLocaleLowerCase());
+      if (monster) state.copies[monster.id] = 0;
+      else missing.push(name);
     }
+    renderRoster();
+    renderCandidateTables();
+    $("#results").replaceChildren();
+    save();
+    showNotice((names.length - missing.length) + " monster(s) excluded." +
+      (missing.length ? " Not found in this dataset: " + missing.join(", ") : ""), missing.length > 0);
   });
   initialize();
 })();
