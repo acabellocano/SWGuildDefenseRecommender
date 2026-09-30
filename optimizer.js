@@ -136,8 +136,13 @@
       };
     }
     if (mode !== "siege") throw new Error("Choose Siege or World Guild Battle before pasting.");
-    const fourStar = parsePasteTable(options.fourStarText, "Siege 4-star table");
-    const all = parsePasteTable(options.allText, "Siege all-defences table");
+    if (!String(options.fourStarText || "").trim() && !String(options.allText || "").trim()) {
+      throw new Error("Paste at least one Siege table.");
+    }
+    const fourStar = String(options.fourStarText || "").trim()
+      ? parsePasteTable(options.fourStarText, "Siege 4-star table") : { teams: [], cleanedLabels: 0 };
+    const all = String(options.allText || "").trim()
+      ? parsePasteTable(options.allText, "Siege all-defences table") : { teams: [], cleanedLabels: 0 };
     const fourKeys = new Set(fourStar.teams.map(team => pasteTeamKey(team.names)));
     const fourSeen = new Set();
     for (const team of fourStar.teams) {

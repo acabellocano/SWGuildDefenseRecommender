@@ -68,6 +68,19 @@ test("uses the whole pasted list for WGB without a rarity category", () => {
   assert.equal(imported.dataset.teams[0].siegeCategory, undefined);
 });
 
+test("cleans a single Siege table without requiring the other inputs", () => {
+  const text = "Monster Leader\tMonster 2\tMonster 3\tBattles\tWR%\nA\tB\tC\t100 / 0.1%\t20%";
+  const fourOnly = datasetFromPastedTables({ mode: "siege", fourStarText: text, allText: "" });
+  assert.equal(fourOnly.fourStarCount, 1);
+  assert.equal(fourOnly.natFiveCount, 0);
+  assert.equal(fourOnly.dataset.teams[0].siegeCategory, "fourStar");
+
+  const allOnly = datasetFromPastedTables({ mode: "siege", fourStarText: "", allText: text });
+  assert.equal(allOnly.fourStarCount, 0);
+  assert.equal(allOnly.natFiveCount, 1);
+  assert.equal(allOnly.dataset.teams[0].siegeCategory, "natFive");
+});
+
 test("revalidates normalized pasted data and optimizes using the supplied copy counts", () => {
   const imported = datasetFromPastedTables({ mode: "siege",
     fourStarText: "Monster Leader\tMonster 2\tMonster 3\tBattles\tWR%\nA\tB\tC\t100 / 0.1%\t20%",

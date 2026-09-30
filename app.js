@@ -86,24 +86,41 @@
       state.dataset.monsters.find(monster => monster.id === id).name + " +" + count).join(", ");
   }
 
+  function initializeCopies(datasets, copies) {
+    for (const dataset of Object.values(datasets)) {
+      if (!dataset) continue;
+      for (const monster of dataset.monsters) {
+        if (copies[monster.id] === undefined) copies[monster.id] = 1;
+      }
+    }
+    return copies;
+  }
+
   function initialize() {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-      if (saved && saved.dataset) {
-        const dataset = GuildDefenseOptimizer.validateDataset(saved.dataset);
-        const copies = saved.copies || Object.fromEntries(dataset.monsters.map(monster => [
-          monster.id, saved.excluded && saved.excluded[monster.id] ? 0 : 1
-        ]));
-        state = { dataset, copies, cleanedLabels: saved.cleanedLabels || 0,
+      if (saved && (saved.datasets || saved.dataset)) {
+        const datasets = { siege: null, wgb: null };
+        if (saved.datasets) {
+          for (const mode of ["siege", "wgb"]) {
+            if (saved.datasets[mode]) datasets[mode] = GuildDefenseOptimizer.validateDataset(saved.datasets[mode]);
+          }
+        } else {
+          const mode = saved.dataset.mode || saved.mode || "siege";
+          datasets[mode] = GuildDefenseOptimizer.validateDataset(saved.dataset);
+        }
+        const mode = saved.mode === "wgb" && datasets.wgb ? "wgb" : datasets.siege ? "siege" : "wgb";
+        const copies = initializeCopies(datasets, saved.copies || {});
+        state = { datasets, dataset: datasets[mode], copies, cleanedLabels: saved.cleanedLabels || 0,
           copyCap: [1, 2, 3, 4, 5].includes(saved.copyCap) ? saved.copyCap : 1,
           allowDuplicateTeams: saved.allowDuplicateTeams === true,
           requestedFour: saved.requestedFour ?? 4, requestedNatFive: saved.requestedNatFive ?? 6,
-          mode: saved.mode === "wgb" ? "wgb" : "siege" };
-      } else state = { dataset: null, copies: {}, cleanedLabels: 0, copyCap: 1,
-        allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, mode: "siege" };
+          activeStep: ["import", "data", "optimize"].includes(saved.activeStep) ? saved.activeStep : "import", mode };
+      } else state = { datasets: { siege: null, wgb: null }, dataset: null, copies: {}, cleanedLabels: 0, copyCap: 1,
+        allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, activeStep: "import", mode: "siege" };
     } catch (error) {
-      state = { dataset: null, copies: {}, cleanedLabels: 0, copyCap: 1,
-        allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, mode: "siege" };
+      state = { datasets: { siege: null, wgb: null }, dataset: null, copies: {}, cleanedLabels: 0, copyCap: 1,
+        allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, activeStep: "import", mode: "siege" };
       showNotice("Saved data could not be loaded. Paste the tables again. " + error.message, true);
     }
     render();
@@ -200,69 +217,69 @@
   }
 
   function render() {
-    const hasData = Boolean(state.dataset);
-    $("#paste-fields").hidden = hasData;
-    $("#paste-panel").hidden = hasData;
-    $("#candidate-tables").hidden = !hasData;
-    $("#availability-panel").hidden = !hasData;
-    $("#optimize").disabled = !hasData;
-    document.querySelector('input[name="mode"][value="' + state.mode + '"]').checked = true;
+    for (const step of ["import", "data", "optimize"]) {
+      const active = state.activeStep === step;
+      $("#step-" + step).hidden = !active;
+      $("#step-tab-" + step).setAttribute("aria-selected", String(active));
+    }
+    document.querySelectorAll("[data-mode]").forEach(button => {
+      button.setAttribute("aria-pressed", String(button.dataset.mode === state.mode));
+      button.disabled = !state.datasets[button.dataset.mode];
+    });
+    $("#optimize").disabled = !state.dataset;
     $("#mode-description").textContent = state.mode === "siege"
       ? "Requests up to ten total defenses from the two pasted lists. If the requested mix is unavailable, the closest match is shown with options to fill any remaining slots."
       : "Builds five teams from the pasted list without a rarity split.";
     $("#siege-counts").hidden = state.mode !== "siege";
     $("#requested-four-star").value = String(state.requestedFour);
     $("#requested-nat-five").value = String(state.requestedNatFive);
-    $("#siege-paste-fields").hidden = state.mode !== "siege";
-    $("#wgb-paste-fields").hidden = state.mode !== "wgb";
-    document.querySelectorAll('input[name="mode"]').forEach(input => { input.disabled = hasData; });
     document.querySelectorAll("[data-copy-cap]").forEach(button => {
-      button.hidden = !hasData || state.mode !== "siege" || state.dataset.mode !== "siege";
+      button.hidden = !state.dataset || state.mode !== "siege";
       button.setAttribute("aria-pressed", String(Number(button.dataset.copyCap) === (state.copyCap || 1)));
       button.classList.toggle("selected", Number(button.dataset.copyCap) === (state.copyCap || 1));
     });
-    $("#copy-tabs").hidden = !hasData || state.mode !== "siege" || state.dataset.mode !== "siege";
-    $("#duplicate-team-option").hidden = !hasData;
+    $("#copy-tabs").hidden = !state.dataset || state.mode !== "siege";
+    $("#duplicate-team-option").hidden = !state.dataset;
     $("#allow-duplicate-teams").checked = state.allowDuplicateTeams;
-    $("#four-star-table-section").hidden = !hasData || state.dataset.mode !== "siege";
-    $("#nat-five-table-section").hidden = !hasData || state.dataset.mode !== "siege";
-    $("#wgb-table-section").hidden = !hasData || state.dataset.mode !== "wgb";
-    if (hasData) {
-      renderCandidateTables();
-      renderRoster();
-    }
-    $("#results").replaceChildren();
+    $("#availability-panel").hidden = !state.dataset;
+    renderCandidateTables();
+    renderRoster();
     save();
   }
 
   function renderCandidateTables() {
-    if (!state.dataset) return;
-    const available = team => [team.leader, ...team.memberIds].every(id => (state.copies[id] ?? 1) > 0);
-    const allFourStar = state.dataset.teams.filter(team => team.siegeCategory === "fourStar");
-    const allNatFive = state.dataset.teams.filter(team => team.siegeCategory === "natFive");
-    const fourStar = allFourStar.filter(available);
-    const natFive = allNatFive.filter(available);
-    const wgb = state.dataset.teams.filter(available);
-    $("#candidate-summary").textContent = state.dataset.mode === "siege"
-      ? fourStar.length + "/" + allFourStar.length + " four-star teams; " +
-        natFive.length + "/" + allNatFive.length + " remaining all-defences teams available; " +
-        "requested " + state.requestedFour + " 4★ + " + state.requestedNatFive + " 5★."
-      : wgb.length + "/" + state.dataset.teams.length + " World Guild Battle teams available.";
-    if (state.cleanedLabels) $("#candidate-summary").textContent += " " + state.cleanedLabels + " doubled labels cleaned.";
-    renderDefenseTable("#four-star-teams", fourStar);
-    renderDefenseTable("#nat-five-teams", natFive);
-    renderDefenseTable("#wgb-teams", wgb);
+    const siege = state.datasets.siege;
+    const wgb = state.datasets.wgb;
+    const fourStar = siege ? siege.teams.filter(team => team.siegeCategory === "fourStar") : [];
+    const natFive = siege ? siege.teams.filter(team => team.siegeCategory === "natFive") : [];
+    const wgbTeams = wgb ? wgb.teams : [];
+    $("#candidate-summary").textContent =
+      (siege ? fourStar.length + " 4-star + " + natFive.length + " 5-star Siege defenses" : "Siege data not imported") +
+      " · " + (wgb ? wgbTeams.length + " WGB defenses" : "WGB data not imported") +
+      (state.cleanedLabels ? " · " + state.cleanedLabels + " doubled labels cleaned." : ".");
+    $("#four-star-table-section").classList.toggle("empty-table", !siege);
+    $("#nat-five-table-section").classList.toggle("empty-table", !siege);
+    $("#wgb-table-section").classList.toggle("empty-table", !wgb);
+    renderDefenseTable("#four-star-teams", fourStar, siege);
+    renderDefenseTable("#nat-five-teams", natFive, siege);
+    renderDefenseTable("#wgb-teams", wgbTeams, wgb);
   }
 
-  function renderDefenseTable(selector, teams) {
+  function renderDefenseTable(selector, teams, dataset) {
     const body = $(selector);
     body.replaceChildren();
+    if (!dataset) {
+      const row = document.createElement("tr");
+      row.append(makeCell("td", "No data imported yet.", "empty-table-message"));
+      body.append(row);
+      return;
+    }
     const sortedTeams = teams.slice().sort((a, b) =>
       b.winRateBps - a.winRateBps || b.battles - a.battles || a.id.localeCompare(b.id));
     for (const team of sortedTeams) {
       const row = document.createElement("tr");
       const names = [team.leader, ...team.memberIds].map(id =>
-        state.dataset.monsters.find(monster => monster.id === id).name);
+        dataset.monsters.find(monster => monster.id === id).name);
       for (const name of names) row.append(makeCell("td", name));
       row.append(makeCell("td", team.battles.toLocaleString()));
       row.append(makeCell("td", (team.winRateBps / 100).toFixed(2) + "%"));
@@ -437,11 +454,15 @@
     try {
       const parsed = JSON.parse(await file.text());
       const dataset = GuildDefenseOptimizer.validateDataset(parsed);
-      if (!dataset.mode) dataset.mode = state.mode;
+      const mode = dataset.mode || state.mode;
+      dataset.mode = mode;
+      state.datasets[mode] = dataset;
+      state.mode = mode;
       state.dataset = dataset;
-      state.copies = Object.fromEntries(dataset.monsters.map(monster => [monster.id, 1]));
+      state.copies = initializeCopies(state.datasets, state.copies);
       state.cleanedLabels = 0;
       $("#results").replaceChildren();
+      state.activeStep = "data";
       render();
       showNotice("Imported " + dataset.teams.length + " defences. All listed monsters start marked available.", false);
     } catch (error) {
@@ -452,32 +473,57 @@
   });
   $("#import-paste").addEventListener("click", () => {
     try {
-      const imported = GuildDefenseOptimizer.datasetFromPastedTables(state.mode === "siege"
-        ? { mode: state.mode, fourStarText: $("#four-star-paste").value, allText: $("#siege-all-paste").value }
-        : { mode: state.mode, allText: $("#wgb-paste").value });
-      state.dataset = GuildDefenseOptimizer.validateDataset(imported.dataset);
-      state.copies = Object.fromEntries(imported.dataset.monsters.map(monster => [monster.id, 1]));
-      state.cleanedLabels = imported.cleanedLabels;
+      const fourStarText = $("#four-star-paste").value;
+      const siegeAllText = $("#siege-all-paste").value;
+      const wgbText = $("#wgb-paste").value;
+      if (![fourStarText, siegeAllText, wgbText].some(text => text.trim())) {
+        throw new Error("Paste at least one table before cleaning the data.");
+      }
+      let siegeImport = null;
+      let wgbImport = null;
+      if (fourStarText.trim() || siegeAllText.trim()) {
+        siegeImport = GuildDefenseOptimizer.datasetFromPastedTables({
+          mode: "siege", fourStarText, allText: siegeAllText
+        });
+      }
+      if (wgbText.trim()) {
+        wgbImport = GuildDefenseOptimizer.datasetFromPastedTables({ mode: "wgb", allText: wgbText });
+      }
+      if (siegeImport) state.datasets.siege = GuildDefenseOptimizer.validateDataset(siegeImport.dataset);
+      if (wgbImport) state.datasets.wgb = GuildDefenseOptimizer.validateDataset(wgbImport.dataset);
+      state.copies = initializeCopies(state.datasets, state.copies);
+      state.mode = siegeImport ? "siege" : "wgb";
+      state.dataset = state.datasets[state.mode];
+      state.cleanedLabels = (siegeImport ? siegeImport.cleanedLabels : 0) +
+        (wgbImport ? wgbImport.cleanedLabels : 0);
+      state.activeStep = "data";
       $("#results").replaceChildren();
       render();
-      const counts = state.mode === "siege"
-        ? imported.fourStarCount + " four-star teams + " + imported.natFiveCount + " remaining all-defences teams"
-        : imported.natFiveCount + " WGB teams";
-      $("#paste-result").textContent = "Imported " + counts + ". All " +
-        imported.dataset.monsters.length + " unique monsters start available.";
-      showNotice("Paste cleaned and imported. Exclude the monsters you don't have, then optimize.", false);
+      const counts = [];
+      if (siegeImport) counts.push(siegeImport.fourStarCount + " four-star + " + siegeImport.natFiveCount + " 5-star Siege defenses");
+      if (wgbImport) counts.push(wgbImport.natFiveCount + " WGB defenses");
+      $("#paste-result").textContent = "Cleaned " + counts.join(" and ") + ".";
+      showNotice("Paste cleaned. Review the three defense tables, then continue to optimization.", false);
     } catch (error) {
       showNotice("Paste import failed: " + error.message, true);
       $("#paste-result").textContent = error.message;
     }
   });
   $("#replace-data").addEventListener("click", () => {
+    setStep("import");
+  });
+  $("#clear-data").addEventListener("click", () => {
+    state.datasets = { siege: null, wgb: null };
     state.dataset = null;
     state.copies = {};
     state.cleanedLabels = 0;
-    $("#results").replaceChildren();
+    for (const selector of ["#four-star-paste", "#siege-all-paste", "#wgb-paste"]) $(selector).value = "";
     $("#paste-result").textContent = "";
+    $("#results").replaceChildren();
+    state.mode = "siege";
+    state.activeStep = "import";
     render();
+    showNotice("Imported data cleared.", false);
   });
   $("#optimize").addEventListener("click", optimize);
   $("#allow-duplicate-teams").addEventListener("change", () => {
@@ -497,11 +543,15 @@
     save();
     optimize();
   }));
-  document.querySelectorAll('input[name="mode"]').forEach(input => input.addEventListener("change", () => {
-    state.mode = input.value;
-    save();
+  document.querySelectorAll("[data-mode]").forEach(button => button.addEventListener("click", () => {
+    if (!state.datasets[button.dataset.mode]) return;
+    state.mode = button.dataset.mode;
+    state.dataset = state.datasets[state.mode];
+    $("#results").replaceChildren();
     render();
   }));
+  document.querySelectorAll(".workflow-tabs [role='tab'], [data-step]").forEach(button =>
+    button.addEventListener("click", () => setStep(button.dataset.step || button.id.replace("step-tab-", ""))));
   for (const [selector, key] of [
     ["#requested-four-star", "requestedFour"],
     ["#requested-nat-five", "requestedNatFive"]
@@ -556,4 +606,10 @@
       (missing.length ? " Not found in this dataset: " + missing.join(", ") : ""), missing.length > 0);
   });
   initialize();
+
+  function setStep(step) {
+    if (!["import", "data", "optimize"].includes(step)) return;
+    state.activeStep = step;
+    render();
+  }
 })();

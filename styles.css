@@ -50,10 +50,23 @@ h2 { font-size: 1.18rem; margin: 0 0 6px; }
 .paste-actions details .import-button { display: inline-block; padding: 7px 10px; background: white; color: var(--green); border: 1px solid #b7cec3; }
 .paste-actions details .import-button input { display: none; }
 .paste-result { min-height: 1.2em; }
+.workflow-tabs { display: flex; gap: 8px; padding: 5px; margin: 16px 0; border: 1px solid var(--line); border-radius: 10px; background: #eef2ef; }
+.workflow-tabs button { flex: 1; padding: 11px 14px; border: 0; border-radius: 7px; background: transparent; color: #53645b; font-weight: 700; cursor: pointer; }
+.workflow-tabs button[aria-selected="true"] { color: var(--green-dark); background: white; box-shadow: 0 1px 4px #20332820; }
+.workflow-tabs button:focus-visible, .mode-switch button:focus-visible { outline: 2px solid #83b59b; outline-offset: 2px; }
+.step-actions { display: flex; justify-content: space-between; gap: 12px; margin: 16px 0; }
+.candidate-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.candidate-columns .defense-table-section { min-width: 0; margin-top: 0; }
+.candidate-columns .defense-table-section h3 { min-height: 2.5em; }
+.candidate-columns .table-scroll { max-height: 540px; }
+.candidate-columns table { min-width: 560px; }
+.empty-table-message { color: var(--muted); }
+.empty-table .table-scroll { background: #f8faf8; }
 .settings-row { display: flex; gap: 18px; align-items: end; flex-wrap: wrap; }
-.mode-switch { border: 0; padding: 0; margin: 0 auto 0 0; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
-.mode-switch legend { width: 100%; color: var(--muted); font-size: .82rem; margin-bottom: 7px; }
-.mode-switch label { font-size: .92rem; }
+.mode-switch { display: flex; gap: 5px; align-items: center; padding: 4px; border: 1px solid var(--line); border-radius: 9px; background: #eef2ef; }
+.mode-switch button { padding: 8px 12px; border: 0; border-radius: 6px; background: transparent; color: #53645b; font: inherit; cursor: pointer; }
+.mode-switch button[aria-pressed="true"] { background: white; color: var(--green-dark); box-shadow: 0 1px 4px #20332820; }
+.mode-switch button:disabled { opacity: .5; cursor: not-allowed; }
 .copy-tabs { display: flex; gap: 3px; padding: 3px; background: #eef2ef; border: 1px solid var(--line); border-radius: 9px; }
 .copy-tabs button { border: 0; border-radius: 6px; padding: 8px 11px; background: transparent; color: #53645b; font-weight: 650; cursor: pointer; }
 .copy-tabs button:hover { background: #fff; }
@@ -109,8 +122,11 @@ footer { padding-top: 8px; font-size: .8rem; }
   .page-header, .section-heading { align-items: stretch; flex-direction: column; }
   .panel { padding: 16px; }
   .settings-row { align-items: stretch; }
-  .mode-switch { margin-right: 0; }
   .paste-grid { grid-template-columns: 1fr; }
+  .candidate-columns { grid-template-columns: 1fr; }
+  .candidate-columns .defense-table-section h3 { min-height: 0; }
+  .workflow-tabs { gap: 3px; }
+  .workflow-tabs button { padding: 10px 5px; font-size: .82rem; }
   .paste-actions { align-items: flex-start; flex-direction: column; }
   .exclude-paste > div { align-items: stretch; flex-direction: column; }
   .exclude-paste button { align-self: flex-start; }
