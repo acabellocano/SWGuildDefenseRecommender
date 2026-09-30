@@ -16,10 +16,6 @@
           <h1>Defence optimizer</h1>
           <p class="lede">Find the strongest portfolio your roster can actually build.</p>
         </div>
-        <label class="import-button">
-          Import candidate data
-          <input id="data-file" type="file" accept=".json,application/json">
-        </label>
       </header>
 
       <div id="notice" class="notice" role="status" aria-live="polite"></div>
@@ -27,6 +23,39 @@
         Candidate data and rosters stay in this browser. Import only data you are authorized to use.
         No live SWGT requests are made.
       </div>
+
+      <section class="panel paste-panel" aria-labelledby="paste-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="paste-title">Paste defence tables</h2>
+            <p>Copy the table, including its header row, and paste it here. Doubled monster labels and battle shares are cleaned up automatically.</p>
+          </div>
+        </div>
+        <div id="siege-paste-fields" class="paste-grid">
+          <label>Siege · 4-star defences
+            <textarea id="four-star-paste" rows="8" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea>
+          </label>
+          <label>Siege · all defences
+            <textarea id="siege-all-paste" rows="8" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea>
+          </label>
+        </div>
+        <div id="wgb-paste-fields" hidden>
+          <label>World Guild Battle · all defences
+            <textarea id="wgb-paste" rows="8" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea>
+          </label>
+        </div>
+        <div class="paste-actions">
+          <button id="import-paste" class="primary-button">Clean and import pasted tables</button>
+          <details>
+            <summary>Import normalized JSON instead</summary>
+            <label class="import-button">
+              Choose JSON file
+              <input id="data-file" type="file" accept=".json,application/json">
+            </label>
+          </details>
+        </div>
+        <p id="paste-result" class="hint"></p>
+      </section>
 
       <section class="panel settings-panel" aria-labelledby="settings-title">
         <div class="section-heading">
@@ -64,7 +93,7 @@
             <tbody id="roster"></tbody>
           </table>
         </div>
-        <p class="hint">Zero usable copies excludes a monster. The global budget counts only copies above usable inventory.</p>
+        <p class="hint">Zero usable copies excludes a monster. Pasted tables do not identify natural rarity: unknown-rarity monsters cannot be duplicated until you set their rarity. Nat-five usage is capped at one.</p>
       </section>
 
       <section id="results" aria-live="polite" aria-label="Optimization results"></section>

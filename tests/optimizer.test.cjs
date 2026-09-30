@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { solve, validateDataset } = require("../optimizer.js");
+const { solve, validateDataset, parsePasteTable, datasetFromPastedTables } = require("../optimizer.js");
 
 const data = {
   title: "test",
@@ -23,6 +23,45 @@ test("validates team identities, sample counts, and natural rarity", () => {
     /unknown monster/);
   assert.throws(() => validateDataset({ ...data, monsters: [{ ...data.monsters[0], naturalStars: 6 }] }),
     /naturalStars/);
+});
+
+test("cleans pasted SWGT tables and subtracts four-star teams from Siege all-defences", () => {
+  const fourStarText = [
+    "Monster Leader\tMonster 2\tMonster 3\tBattles\tWR%",
+    "ConradConrad\tKinkiKinki\tROBO-R40ROBO-R40\t1,048 / 0.2%\t19.7%",
+    "FionaFiona\tEshirEshir\tTruffleTruffle\t1,791 / 0.4%\t19.6%"
+  ].join("\n");
+  const allText = [
+    "Monster Leader\tMonster 2\tMonster 3\tBattles\tWR%",
+    "LamiellaLamiella\tAshourAshour\tByungchulByungchul\t1,508 / 0.3%\t20.2%",
+    "ConradConrad\tKinkiKinki\tROBO-R40ROBO-R40\t1,048 / 0.2%\t19.7%",
+    "FionaFiona\tEshirEshir\tTruffleTruffle\t1,791 / 0.4%\t19.6%",
+    "LamiellaLamiella\tMollyMolly\tShahatShahat\t2,456 / 0.5%\t19.2%"
+  ].join("\n");
+  const parsed = parsePasteTable(fourStarText, "test");
+  assert.equal(parsed.teams[0].names[2], "ROBO-R40");
+  assert.equal(parsed.teams[0].battles, 1048);
+  assert.equal(parsed.teams[0].winRate, 19.7);
+  const imported = datasetFromPastedTables({ mode: "siege", fourStarText, allText });
+  assert.equal(imported.dataset.teams.length, 4);
+  assert.equal(imported.fourStarCount, 2);
+  assert.equal(imported.natFiveCount, 2);
+  assert.equal(imported.dataset.teams.filter(team => team.siegeCategory === "fourStar").length, 2);
+  assert.equal(imported.dataset.teams.filter(team => team.siegeCategory === "natFive").length, 2);
+  assert.ok(imported.dataset.monsters.every(monster => monster.naturalStars === 0));
+});
+
+test("uses the whole pasted list for WGB without a rarity category", () => {
+  const text = [
+    "Monster Leader\tMonster 2\tMonster 3\tBattles\tWR%",
+    "MiraMira\t7R1X7R1X\tLiu MeiLiu Mei\t140 / 0.1%\t21.5%"
+  ].join("\n");
+  const imported = datasetFromPastedTables({ mode: "wgb", allText: text });
+  assert.equal(imported.dataset.teams.length, 1);
+  assert.equal(imported.dataset.teams[0].leader, "Mira");
+  assert.equal(imported.dataset.teams[0].members[0], "7R1X");
+  assert.equal(imported.dataset.teams[0].members[1], "Liu Mei");
+  assert.equal(imported.dataset.teams[0].siegeCategory, undefined);
 });
 
 test("optimizes shared siege resources and counts additional copies", () => {

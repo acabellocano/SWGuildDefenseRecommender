@@ -100,10 +100,24 @@
       const name = document.createElement("td");
       name.textContent = monster.name;
       const rarity = document.createElement("td");
-      const badge = document.createElement("span");
-      badge.className = "rarity";
-      badge.textContent = monster.naturalStars + "★";
-      rarity.append(badge);
+      const stars = document.createElement("select");
+      stars.className = "rarity-select";
+      stars.setAttribute("aria-label", "Natural rarity of " + monster.name);
+      for (const [value, label] of [[0, "Unknown"], [1, "1★"], [2, "2★"], [3, "3★"], [4, "4★"], [5, "5★"]]) {
+        const option = document.createElement("option");
+        option.value = String(value);
+        option.textContent = label;
+        stars.append(option);
+      }
+      stars.value = String(monster.naturalStars);
+      stars.addEventListener("change", () => {
+        monster.naturalStars = Number(stars.value);
+        if (monster.naturalStars === 0 || monster.naturalStars === 5) row.maxAdditional = 0;
+        state.roster[monster.id] = row;
+        save();
+        renderRoster();
+      });
+      rarity.append(stars);
       const owned = makeNumberInput(row.owned, "Usable copies of " + monster.name, value => {
         row.owned = value;
         state.roster[monster.id] = row;
@@ -113,7 +127,7 @@
       });
       const additional = makeNumberInput(row.maxAdditional, "Maximum extra copies of " + monster.name,
         value => { row.maxAdditional = value; state.roster[monster.id] = row; save(); });
-      if (monster.naturalStars === 5) {
+      if (monster.naturalStars === 0 || monster.naturalStars === 5) {
         additional.value = "0";
         additional.disabled = true;
       }
@@ -151,8 +165,14 @@
     document.querySelector('input[name="mode"][value="' + state.mode + '"]').checked = true;
     $("#budget").value = String(state.budget);
     $("#mode-description").textContent = state.mode === "siege"
-      ? "Siege selects exactly four teams using only natural 4★-or-lower monsters, plus six teams containing at least one natural 5★."
-      : "World Guild Battle selects five teams from the imported candidate list, with no rarity quota.";
+      ? "Siege selects four teams from the pasted 4-star table and six from all-defences after removing those exact teams."
+      : "World Guild Battle selects five teams from the pasted list, with no rarity quota.";
+    if (state.dataset.mode && state.dataset.mode !== state.mode) {
+      $("#paste-result").textContent = "The currently loaded " + state.dataset.mode.toUpperCase() +
+        " data does not match the selected mode. Paste and import data for this mode before optimizing.";
+    }
+    $("#siege-paste-fields").hidden = state.mode !== "siege";
+    $("#wgb-paste-fields").hidden = state.mode !== "wgb";
     $("#results").replaceChildren();
     save();
   }
@@ -223,6 +243,10 @@
   }
 
   async function optimize() {
+    if (state.dataset.mode && state.dataset.mode !== state.mode) {
+      showNotice("Paste and import candidate data for the selected battle type first.", true);
+      return;
+    }
     const budget = Number($("#budget").value);
     if (!Number.isInteger(budget) || budget < 0 || budget > 20) {
       showNotice("The comparison budget must be a whole number from 0 to 20.", true);
@@ -274,6 +298,30 @@
       showNotice("Import failed: " + error.message, true);
     } finally {
       event.target.value = "";
+    }
+  });
+  $("#import-paste").addEventListener("click", () => {
+    try {
+      const imported = GuildDefenseOptimizer.datasetFromPastedTables(state.mode === "siege"
+        ? { mode: state.mode, fourStarText: $("#four-star-paste").value, allText: $("#siege-all-paste").value }
+        : { mode: state.mode, allText: $("#wgb-paste").value });
+      const roster = {};
+      for (const monster of imported.dataset.monsters) {
+        roster[monster.id] = state.roster[monster.id] || { owned: 0, maxAdditional: 0 };
+      }
+      state.dataset = GuildDefenseOptimizer.validateDataset(imported.dataset);
+      state.roster = roster;
+      $("#results").replaceChildren();
+      render();
+      const cleanup = imported.cleanedLabels + " doubled labels cleaned";
+      const counts = state.mode === "siege"
+        ? imported.fourStarCount + " four-star teams + " + imported.natFiveCount + " remaining all-defences teams"
+        : imported.natFiveCount + " WGB teams";
+      $("#paste-result").textContent = "Imported " + counts + "; " + cleanup + ". Set usable copies and confirm natural rarity below.";
+      showNotice("Paste cleaned and imported. New monster copies default to zero.", false);
+    } catch (error) {
+      showNotice("Paste import failed: " + error.message, true);
+      $("#paste-result").textContent = error.message;
     }
   });
   $("#load-example").addEventListener("click", () => {

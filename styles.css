@@ -39,6 +39,18 @@ h2 { font-size: 1.18rem; margin: 0 0 6px; }
 .notice.error { display: block; color: #832c25; background: #fff0ed; }
 .notice.success { display: block; }
 .privacy-note { border-left: 3px solid #83b59b; padding: 7px 12px; margin-bottom: 16px; font-size: .85rem; color: #53645b; }
+.paste-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.paste-panel label { display: grid; gap: 7px; font-weight: 650; font-size: .88rem; }
+.paste-panel textarea { width: 100%; resize: vertical; padding: 10px; border: 1px solid #bdc9c2; border-radius: 7px; font: .8rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.paste-panel textarea:focus, select:focus, input:focus { outline: 2px solid #83b59b; outline-offset: 1px; }
+.paste-actions { display: flex; align-items: center; gap: 16px; margin-top: 14px; }
+.paste-actions details { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: .85rem; }
+.paste-actions summary { cursor: pointer; }
+.paste-actions details[open] { display: flex; }
+.paste-actions details .import-button { display: inline-block; padding: 7px 10px; background: white; color: var(--green); border: 1px solid #b7cec3; }
+.paste-actions details .import-button input { display: none; }
+.paste-result { min-height: 1.2em; }
+.rarity-select { padding: 6px; border: 1px solid #bdc9c2; border-radius: 6px; background: white; }
 .settings-row { display: flex; gap: 18px; align-items: end; flex-wrap: wrap; }
 .mode-switch { border: 0; padding: 0; margin: 0 auto 0 0; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 .mode-switch legend { width: 100%; color: var(--muted); font-size: .82rem; margin-bottom: 7px; }
@@ -76,4 +88,6 @@ footer { padding-top: 8px; font-size: .8rem; }
   .settings-row { align-items: stretch; }
   .mode-switch { margin-right: 0; }
   .budget-label { align-self: center; }
+  .paste-grid { grid-template-columns: 1fr; }
+  .paste-actions { align-items: flex-start; flex-direction: column; }
 }

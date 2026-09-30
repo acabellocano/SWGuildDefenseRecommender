@@ -10,13 +10,20 @@ Serve this directory with any static HTTP server, for example:
 python -m http.server 8000
 ```
 
-Then open <http://localhost:8000>. A clearly labelled synthetic example loads by default. Import a JSON dataset to use other candidate defences; no data or roster is sent to a server.
+Then open <http://localhost:8000>. A clearly labelled synthetic example loads by default. Paste the copied table with its header row:
+
+- **Siege:** paste both the four-star-only list and the all-defences list. Exact teams in the four-star list are removed from the all-defences list; the remaining teams form the Siege nat-five category.
+- **World Guild Battle:** select that mode and paste its all-defences list. No rarity split is applied.
+
+The importer collapses doubled labels such as `FionaFiona`, extracts the integer battle count from cells such as `1,048 / 0.2%`, and parses `WR%` separately. Pasted monster rarity is not present in these tables, so it starts as unknown. Set natural stars in the roster table; unknown and nat-five monsters cannot be assigned extra builds. Newly imported monsters start with zero usable copies.
+
+No data or roster is sent to a server.
 
 Run the solver checks with `node --test tests/optimizer.test.cjs`.
 
 ## Candidate data format
 
-Import a JSON file with this shape. `naturalStars` means natural rarity, not current/awakened stars. `winRate` is a percentage and `battles` is the positive integer battle count; the sample share is not used.
+Normalized JSON import is also available. `naturalStars` means natural rarity (0 means unknown), not current/awakened stars. `winRate` is a percentage and `battles` is the positive integer battle count; the sample share is not used.
 
 ```json
 {
