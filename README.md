@@ -1,2 +1,38 @@
-# SWGuildDefenseRecommender
-A Summoners War Guild Defense Recommender for Siege and World Guild Battle, based on available monsters and willingness to build dupes
+# Guild Defence Optimizer
+
+A dependency-free, local-first prototype for planning Summoners War Siege and World Guild Battle defences from a candidate dataset and each player's usable monster copies.
+
+## Run
+
+Serve this directory with any static HTTP server, for example:
+
+```sh
+python -m http.server 8000
+```
+
+Then open <http://localhost:8000>. A clearly labelled synthetic example loads by default. Import a JSON dataset to use other candidate defences; no data or roster is sent to a server.
+
+Run the solver checks with `node --test tests/optimizer.test.cjs`.
+
+## Candidate data format
+
+Import a JSON file with this shape. `naturalStars` means natural rarity, not current/awakened stars. `winRate` is a percentage and `battles` is the positive integer battle count; the sample share is not used.
+
+```json
+{
+  "title": "Authorized snapshot",
+  "snapshot": "Season or date; battle type and rank scope",
+  "monsters": [
+    { "id": "monster-1", "name": "Display name", "naturalStars": 4 },
+    { "id": "monster-2", "name": "Another monster", "naturalStars": 5 },
+    { "id": "monster-3", "name": "Third monster", "naturalStars": 3 }
+  ],
+  "teams": [
+    { "leader": "monster-1", "members": ["monster-2", "monster-3"], "winRate": 18.2, "battles": 1109 }
+  ]
+}
+```
+
+Siege returns four teams using only natural 4★-or-lower monsters and six teams containing at least one natural 5★. World Guild Battle returns five teams without a rarity quota. Both modes optimize each up-to-copy budget independently, cap nat-five usage at one copy, and show average historical win rate and required builds. Infeasible results are not presented as complete portfolios.
+
+The app intentionally has no live SWGT connector. Add one only after written permission specifies a supported access method, permitted fields, retention and refresh frequency. Imported data should be used only under the applicable authorization; this local prototype does not determine data rights.

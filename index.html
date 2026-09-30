@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Guild Defence Optimizer</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="optimizer.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main class="page">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">SUMMONERS WAR · GUILD TOOLS</p>
+          <h1>Defence optimizer</h1>
+          <p class="lede">Find the strongest portfolio your roster can actually build.</p>
+        </div>
+        <label class="import-button">
+          Import candidate data
+          <input id="data-file" type="file" accept=".json,application/json">
+        </label>
+      </header>
+
+      <div id="notice" class="notice" role="status" aria-live="polite"></div>
+      <div class="privacy-note">
+        Candidate data and rosters stay in this browser. Import only data you are authorized to use.
+        No live SWGT requests are made.
+      </div>
+
+      <section class="panel settings-panel" aria-labelledby="settings-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="settings-title">Optimization settings</h2>
+            <p>Every budget is solved independently; a higher budget may recommend a different build plan.</p>
+          </div>
+        </div>
+        <div class="settings-row">
+          <fieldset class="mode-switch">
+            <legend>Battle type</legend>
+            <label><input type="radio" name="mode" value="siege" checked> Siege · 4 + 6</label>
+            <label><input type="radio" name="mode" value="wgb"> World Guild Battle · 5</label>
+          </fieldset>
+          <label class="budget-label" for="budget">Compare up to extra copies</label>
+          <input id="budget" type="number" min="0" max="20" value="5">
+          <button id="optimize" class="primary-button">Optimize portfolio</button>
+        </div>
+        <p id="mode-description" class="hint"></p>
+      </section>
+
+      <section class="panel roster-panel" aria-labelledby="roster-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="roster-title">Your roster</h2>
+            <p>Set usable copies, then allow extra lower-rarity copies you can build. Nat-five use is capped at one.</p>
+          </div>
+          <button id="load-example" class="secondary-button">Load synthetic example</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Monster</th><th>Natural stars</th><th>Usable copies</th><th>Max extra copies</th></tr>
+            </thead>
+            <tbody id="roster"></tbody>
+          </table>
+        </div>
+        <p class="hint">Zero usable copies excludes a monster. The global budget counts only copies above usable inventory.</p>
+      </section>
+
+      <section id="results" aria-live="polite" aria-label="Optimization results"></section>
+      <footer>Historical win rates are descriptive, not predictions. Sample counts and snapshot details come from the imported data.</footer>
+    </main>
+  </body>
+</html>
