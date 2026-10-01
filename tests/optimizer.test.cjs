@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { solve, solveClosest, suggestFillTeams, validateDataset, parsePasteTable, datasetFromPastedTables } = require("../optimizer.js");
+const { solve, solveClosest, suggestFillTeams, validateDataset, parsePasteTable, datasetFromPastedTables,
+  datasetFromRankPastedTables, wilsonInterval } = require("../optimizer.js");
 
 const data = {
   title: "test",
@@ -53,6 +54,172 @@ test("cleans pasted SWGT tables and subtracts four-star teams from Siege all-def
   assert.equal(imported.dataset.monsters.find(monster => monster.id === "Lamiella").rosterGroup, "unknown");
   const normalized = validateDataset(imported.dataset);
   assert.equal(normalized.monsters.find(monster => monster.id === "Conrad").rosterGroup, "fourStar");
+});
+
+test("imports rank-scoped tables and reconstructs only uniquely attributable G1 residuals", () => {
+  const table = rows => [
+    "Monster Leader\tMonster 2\tMonster 3\tBattles\tWR%",
+    ...rows.map(row => row.join("\t"))
+  ].join("\n");
+  const imported = datasetFromRankPastedTables({
+    snapshot: "Same season and snapshot",
+    tables: {
+      G1: table([["Morris", "Rex", "Shumar", "2,028 / 0.2%", "21.0%"]]),
+      G2: table([["Morris", "Orion", "Trevor", "1,672 / 0.2%", "19.0%"]]),
+      G3: table([["Morris", "Orion", "Trevor", "3,687 / 0.4%", "12.2%"]]),
+      ALL: table([
+        ["Morris", "Orion", "Trevor", "6,343 / 0.6%", "16.2%"],
+        ["Fiona", "Eshir", "Truffle", "1,794 / 0.2%", "19.6%"]
+      ])
+    }
+  });
+  const teams = imported.dataset.teams;
+  const inferred = teams.find(team => team.leader === "Morris" && team.memberIds.includes("Orion"));
+  const aggregateOnly = teams.find(team => team.leader === "Fiona");
+  const measured = teams.find(team => team.leader === "Morris" && team.memberIds.includes("Rex"));
+
+  assert.equal(imported.dataset.rankAware, true);
+  assert.equal(inferred.g1Evidence.status, "inferred");
+  assert.equal(inferred.g1Evidence.battles, 984);
+  assert.ok(inferred.g1Evidence.winRate > 25.8 && inferred.g1Evidence.winRate < 27);
+  assert.ok(inferred.g1Evidence.conservativeRate <= inferred.g1Evidence.roundingRange.lower);
+  assert.equal(aggregateOnly.g1Evidence.status, "unknown");
+  assert.equal(measured.g1Evidence.status, "measured");
+  assert.equal(measured.g1Evidence.battles, 2028);
+  assert.ok(measured.g1Evidence.wilson95.lower < 21);
+  assert.ok(measured.g1Evidence.wilson95.upper > 21);
+
+  const withoutG1Table = datasetFromRankPastedTables({
+    tables: {
+      G2: table([["Morris", "Orion", "Trevor", "1,672 / 0.2%", "19.0%"]]),
+      G3: table([["Morris", "Orion", "Trevor", "3,687 / 0.4%", "12.2%"]]),
+      ALL: table([["Morris", "Orion", "Trevor", "6,343 / 0.6%", "16.2%"]])
+    }
+  });
+  assert.equal(withoutG1Table.dataset.teams[0].g1Evidence.status, "unknown");
+  const roster = Object.fromEntries(withoutG1Table.dataset.monsters.map(monster =>
+    [monster.id, { owned: 1, maxAdditional: 0, maxCopies: 1 }]));
+  const noEvidence = solveClosest(withoutG1Table.dataset, roster, "siege", 0, {
+    requirements: { fourStar: 1, natFive: 0 }
+  });
+  assert.equal(noEvidence.status, "infeasible");
+  assert.match(noEvidence.reason, /no defense has measured or uniquely reconstructible G1 evidence/i);
+});
+
+test("subtracts known 4-star defenses across all eight Siege tables", () => {
+  const table = rows => [
+    "Monster Leader\tMonster 2\tMonster 3\tBattles\tWR%",
+    ...rows.map(row => row.join("\t"))
+  ].join("\n");
+  const fourStarTeam = ["Morris", "Orion", "Trevor"];
+  const otherFourStar = ["Fiona", "Eshir", "Liesel"];
+  const fiveStarTeam = ["Rakan", "Galleon", "Triton"];
+  const fourStarTables = {
+    G1: table([[...fourStarTeam, "1200", "20.0%"]]),
+    G2: table([[...fourStarTeam, "1100", "16.0%"]]),
+    G3: table([[...otherFourStar, "1300", "10.0%"]]),
+    ALL: table([[...fourStarTeam, "4000", "14.0%"], [...otherFourStar, "2500", "11.0%"]])
+  };
+  const allTables = {
+    G1: table([[...fourStarTeam, "1200", "20.0%"], [...fiveStarTeam, "1500", "18.0%"]]),
+    G2: table([[...fourStarTeam, "1100", "16.0%"], [...fiveStarTeam, "1600", "15.0%"]]),
+    G3: table([[...otherFourStar, "1300", "10.0%"], [...fiveStarTeam, "1700", "12.0%"]]),
+    ALL: table([
+      [...fourStarTeam, "4000", "14.0%"],
+      [...otherFourStar, "2500", "11.0%"],
+      [...fiveStarTeam, "4800", "14.0%"]
+    ])
+  };
+  const imported = datasetFromRankPastedTables({ mode: "siege", fourStarTables, allTables });
+  const fourStar = imported.dataset.teams.filter(team => team.siegeCategory === "fourStar");
+  const remainder = imported.dataset.teams.filter(team => team.siegeCategory === "natFive");
+
+  assert.equal(fourStar.length, 2);
+  assert.equal(remainder.length, 1);
+  assert.deepEqual(remainder[0].rankTablesProvided, ["G1", "G2", "G3", "ALL"]);
+  assert.equal(remainder[0].rankData.G1.battles, 1500);
+  assert.equal(remainder[0].rankData.ALL.battles, 4800);
+  assert.equal(imported.fourStarCount, 2);
+  assert.equal(imported.natFiveCount, 1);
+});
+
+test("imports rank-aware WGB as one category without rarity splits", () => {
+  const table = rows => [
+    "Monster Leader\tMonster 2\tMonster 3\tBattles\tWR%",
+    ...rows.map(row => row.join("\t"))
+  ].join("\n");
+  const imported = datasetFromRankPastedTables({
+    mode: "wgb",
+    tables: {
+      G1: table([["Mira", "Riley", "Liu Mei", "1200", "20.0%"]]),
+      G2: table([["Mira", "Riley", "Liu Mei", "1300", "16.0%"]]),
+      G3: table([["Mira", "Riley", "Liu Mei", "1500", "10.0%"]]),
+      ALL: table([["Mira", "Riley", "Liu Mei", "4000", "14.0%"]])
+    }
+  });
+  assert.equal(imported.dataset.mode, "wgb");
+  assert.equal(imported.dataset.rankAware, true);
+  assert.equal(imported.dataset.teams.length, 1);
+  assert.equal(imported.dataset.teams[0].g1Evidence.status, "measured");
+  assert.equal(imported.dataset.teams[0].siegeCategory, undefined);
+  assert.ok(imported.dataset.monsters.every(monster => monster.rosterGroup !== "fourStar"));
+  const roster = Object.fromEntries(imported.dataset.monsters.map(monster =>
+    [monster.id, { owned: 1, maxAdditional: 0, maxCopies: 1 }]));
+  const result = solve(imported.dataset, roster, "wgb", 0, { requirements: { any: 1 } });
+  assert.equal(result.status, "optimal");
+  assert.ok(result.averageWinRate < 20);
+});
+
+test("rejects rank samples not covered by their declared source tables", () => {
+  assert.throws(() => validateDataset({
+    mode: "wgb",
+    rankAware: true,
+    rankTablesProvided: ["ALL"],
+    monsters: [
+      { id: "a", name: "A", naturalStars: 0 },
+      { id: "b", name: "B", naturalStars: 0 },
+      { id: "c", name: "C", naturalStars: 0 }
+    ],
+    teams: [{
+      leader: "a",
+      members: ["b", "c"],
+      winRate: 20,
+      battles: 100,
+      rankData: { G1: { winRate: 20, battles: 100, precision: 0 } },
+      rankTablesProvided: ["ALL"]
+    }]
+  }), /unless that rank table was supplied/);
+});
+
+test("does not infer G1 when another rank is missing and uses Wilson lower bound for portfolio selection", () => {
+  const fixture = validateDataset({
+    mode: "siege",
+    rankAware: true,
+    rankTablesProvided: ["G1", "ALL", "G3"],
+    monsters: ["a", "b", "c", "d", "e", "f", "g", "h", "i"].map(id =>
+      ({ id, name: id, naturalStars: 0, rosterGroup: "fourStar" })),
+    teams: [
+      { leader: "a", members: ["b", "c"], winRate: 20, battles: 1000, siegeCategory: "fourStar",
+        rankData: { G1: { winRate: 30, battles: 10, precision: 0 } } },
+      { leader: "d", members: ["e", "f"], winRate: 20, battles: 1000, siegeCategory: "fourStar",
+        rankData: { G1: { winRate: 20, battles: 1000, precision: 0 } } },
+      { leader: "g", members: ["h", "i"], winRate: 16, battles: 2000, siegeCategory: "fourStar",
+        rankData: {
+          ALL: { winRate: 16, battles: 2000, precision: 0 },
+          G3: { winRate: 12, battles: 1000, precision: 0 }
+        } }
+    ]
+  });
+  const roster = Object.fromEntries(fixture.monsters.map(monster =>
+    [monster.id, { owned: 1, maxAdditional: 0, maxCopies: 1 }]));
+  assert.equal(fixture.teams[2].g1Evidence.status, "unknown");
+  const result = solve(fixture, roster, "siege", 0, {
+    requirements: { fourStar: 1, natFive: 0 }, timeLimitMs: 5000
+  });
+  assert.equal(result.status, "optimal");
+  assert.equal(result.teams[0].leader, "d");
+  assert.ok(result.averageWinRate < 20);
+  assert.ok(wilsonInterval(20, 100).lower < 0.2);
 });
 
 test("uses the whole pasted list for WGB without a rarity category", () => {

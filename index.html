@@ -46,44 +46,106 @@
       </div>
 
       <nav class="workflow-tabs" role="tablist" aria-label="Optimizer steps">
-        <button id="step-tab-import" type="button" role="tab" aria-controls="step-import" aria-selected="true">1. Import data</button>
-        <button id="step-tab-data" type="button" role="tab" aria-controls="step-data" aria-selected="false">2. Cleaned data</button>
-        <button id="step-tab-optimize" type="button" role="tab" aria-controls="step-optimize" aria-selected="false">3. Optimize</button>
+        <button id="step-tab-intro" type="button" role="tab" aria-controls="step-intro" aria-selected="true">1. Choose mode</button>
+        <button id="step-tab-import" type="button" role="tab" aria-controls="step-import" aria-selected="false">2. Import data</button>
+        <button id="step-tab-data" type="button" role="tab" aria-controls="step-data" aria-selected="false">3. Review data</button>
+        <button id="step-tab-optimize" type="button" role="tab" aria-controls="step-optimize" aria-selected="false">4. Optimize</button>
       </nav>
 
-      <section id="step-import" class="step-panel" role="tabpanel" aria-labelledby="step-tab-import">
+      <section id="step-intro" class="step-panel" role="tabpanel" aria-labelledby="step-tab-intro">
+        <section class="panel mode-picker" aria-labelledby="mode-picker-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="mode-picker-title">What do you want to optimize?</h2>
+              <p>Choose a battle mode. Siege separates 4-star defenses from the all-defenses remainder; World Guild Battle uses one unsegmented defense list.</p>
+            </div>
+          </div>
+          <div class="mode-cards">
+            <button id="choose-siege" type="button" class="mode-card">
+              <strong>Siege</strong>
+              <span>Rank-aware G1, G2, G3, and ALL data for 4-star and all defenses.</span>
+            </button>
+            <button id="choose-wgb" type="button" class="mode-card">
+              <strong>World Guild Battle</strong>
+              <span>Rank-aware G1, G2, G3, and ALL data with no rarity split.</span>
+            </button>
+          </div>
+        </section>
+        <div class="step-actions">
+          <button id="clear-data" class="secondary-button">Clear imported data</button>
+          <button type="button" data-step="import" class="primary-button">Continue to import</button>
+        </div>
+      </section>
+
+      <section id="step-import" class="step-panel" role="tabpanel" aria-labelledby="step-tab-import" hidden>
       <section id="paste-panel" class="panel paste-panel" aria-labelledby="paste-title">
         <div class="section-heading">
           <div>
-            <h2 id="paste-title">Paste defence tables</h2>
-            <p>Paste any combination of these tables, including header rows. All three are recommended; doubled monster labels and battle shares are cleaned automatically.</p>
+            <h2 id="paste-title">Import <span id="import-mode-title">Siege</span> data</h2>
+            <p>Paste the matching rank tables, including headers. Rank rows omitted by SWGT are censored, not zero.</p>
           </div>
+          <button type="button" data-step="intro" class="secondary-button">Change mode</button>
         </div>
-        <div id="paste-fields">
-          <div class="paste-grid">
-            <label>Siege · 4-star defences
-              <textarea id="four-star-paste" rows="8" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea>
-            </label>
-            <label>Siege · all defences (used to derive the 5-star list)
-              <textarea id="siege-all-paste" rows="8" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea>
-            </label>
-            <label>World Guild Battle · all defences
-              <textarea id="wgb-paste" rows="8" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea>
-            </label>
+        <label class="snapshot-label">Snapshot note
+          <input id="rank-snapshot" type="text" placeholder="Season, date, and filter scope">
+        </label>
+        <div id="siege-rank-import">
+          <p class="hint">Paste separate 4-star-only and all-defenses views for each rank. Teams found in any 4-star table are removed from the all-defenses remainder.</p>
+          <details class="rank-import" open>
+            <summary>Siege · 4-star defenses</summary>
+            <div class="rank-paste-grid">
+              <label>G1<textarea id="siege-four-g1" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+              <label>G2<textarea id="siege-four-g2" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+              <label>G3<textarea id="siege-four-g3" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+              <label>ALL ranks<textarea id="siege-four-all" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+            </div>
+          </details>
+          <details class="rank-import">
+            <summary>Siege · all defenses (all rarities)</summary>
+            <div class="rank-paste-grid">
+              <label>G1<textarea id="siege-all-g1" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+              <label>G2<textarea id="siege-all-g2" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+              <label>G3<textarea id="siege-all-g3" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+              <label>ALL ranks<textarea id="siege-all-all" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+            </div>
+          </details>
+          <button id="import-ranked-paste" type="button" class="primary-button">Import Siege rank tables</button>
+          <p id="rank-paste-result" class="hint" role="status"></p>
+        </div>
+        <div id="wgb-rank-import" hidden>
+          <details class="rank-import" open>
+            <summary>World Guild Battle · rank tables</summary>
+            <p class="hint">This mode uses one defense list, without a monster-rarity split.</p>
+            <div class="rank-paste-grid">
+              <label>G1<textarea id="wgb-g1" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+              <label>G2<textarea id="wgb-g2" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+              <label>G3<textarea id="wgb-g3" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+              <label>ALL ranks<textarea id="wgb-all" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+            </div>
+          </details>
+          <button id="import-wgb-ranked" type="button" class="primary-button">Import WGB rank tables</button>
+          <p id="wgb-rank-paste-result" class="hint" role="status"></p>
+        </div>
+        <details class="legacy-import">
+          <summary>Import a legacy single-table dataset or normalized JSON</summary>
+          <p class="hint">Legacy paste data is retained for earlier exports; it has no rank-specific evidence.</p>
+          <div id="legacy-siege-import">
+            <div class="paste-grid">
+              <label>4-star defences<textarea id="four-star-paste" rows="5" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+              <label>All defences<textarea id="siege-all-paste" rows="5" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
+            </div>
+          </div>
+          <div id="legacy-wgb-import" hidden>
+            <label>WGB defenses<textarea id="wgb-paste" rows="5" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
           </div>
           <div class="paste-actions">
-            <button id="import-paste" class="primary-button">Clean pasted data and continue</button>
-            <button id="clear-data" class="secondary-button">Clear imported data</button>
-            <details>
-              <summary>Import normalized JSON instead</summary>
-              <label class="import-button">
-                Choose JSON file
-                <input id="data-file" type="file" accept=".json,application/json">
-              </label>
-            </details>
+            <button id="import-paste" class="primary-button">Import legacy table data</button>
+            <label class="import-button">Choose JSON file
+              <input id="data-file" type="file" accept=".json,application/json">
+            </label>
           </div>
-        </div>
-        <p id="paste-result" class="hint"></p>
+          <p id="paste-result" class="hint"></p>
+        </details>
       </section>
       </section>
 
@@ -98,23 +160,23 @@
         </div>
         <div class="candidate-columns">
         <div id="four-star-table-section" class="defense-table-section">
-          <h3>Four-star defences</h3>
+          <h3>Siege · 4-star defenses</h3>
           <div class="table-scroll"><table>
-            <thead><tr><th>Leader</th><th>Monster 2</th><th>Monster 3</th><th>Battles</th><th>WR%</th></tr></thead>
+            <thead><tr><th>Leader</th><th>Monster 2</th><th>Monster 3</th><th>Battles</th><th>WR%</th><th class="rank-evidence-column" hidden>Rank evidence</th></tr></thead>
             <tbody id="four-star-teams"></tbody>
           </table></div>
         </div>
         <div id="nat-five-table-section" class="defense-table-section">
-          <h3>5-star defences · Siege all-defences data</h3>
+          <h3>Siege · all-defenses remainder</h3>
           <div class="table-scroll"><table>
-            <thead><tr><th>Leader</th><th>Monster 2</th><th>Monster 3</th><th>Battles</th><th>WR%</th></tr></thead>
+            <thead><tr><th>Leader</th><th>Monster 2</th><th>Monster 3</th><th>Battles</th><th>WR%</th><th class="rank-evidence-column" hidden>Rank evidence</th></tr></thead>
             <tbody id="nat-five-teams"></tbody>
           </table></div>
         </div>
         <div id="wgb-table-section" class="defense-table-section">
-          <h3>World Guild Battle defences</h3>
+          <h3>World Guild Battle defenses</h3>
           <div class="table-scroll"><table>
-            <thead><tr><th>Leader</th><th>Monster 2</th><th>Monster 3</th><th>Battles</th><th>WR%</th></tr></thead>
+            <thead><tr><th>Leader</th><th>Monster 2</th><th>Monster 3</th><th>Battles</th><th>WR%</th><th class="rank-evidence-column" hidden>Rank evidence</th></tr></thead>
             <tbody id="wgb-teams"></tbody>
           </table></div>
         </div>
@@ -131,20 +193,17 @@
         <div class="section-heading">
           <div>
             <h2 id="settings-title">Optimization settings</h2>
-            <p>Choose Siege (up to 10 defenses) or World Guild Battle (5 defenses), then set your available monsters.</p>
+            <p id="settings-description">Set your available monsters and choose a portfolio size.</p>
           </div>
+          <button type="button" data-step="intro" class="secondary-button">Change mode</button>
         </div>
         <div class="settings-row">
-          <div class="mode-switch" role="group" aria-label="Battle type">
-            <button type="button" data-mode="siege" aria-pressed="true">Siege</button>
-            <button type="button" data-mode="wgb" aria-pressed="false">World Guild Battle · 5</button>
-          </div>
           <div id="siege-counts" class="siege-counts">
             <label>4★ defenses
               <input id="requested-four-star" type="number" min="0" max="10" value="4" aria-label="Requested 4-star defenses">
             </label>
-            <label>5★ defenses
-              <input id="requested-nat-five" type="number" min="0" max="10" value="6" aria-label="Requested 5-star defenses">
+            <label><span id="remainder-label">5★ defenses</span>
+              <input id="requested-nat-five" type="number" min="0" max="10" value="6" aria-label="Requested all-defenses remainder">
             </label>
           </div>
           <div id="copy-tabs" class="copy-tabs" role="group" aria-label="Maximum copies per 4-star monster">
@@ -169,7 +228,7 @@
         <div class="section-heading">
           <div>
             <h2 id="roster-title">Exclude monsters you don’t have</h2>
-            <p>5★/unknown monsters appear first, then 4★-or-lower monsters. Within each group, most-used monsters appear first.</p>
+            <p id="roster-description">Within each group, most-used monsters appear first.</p>
           </div>
         </div>
         <div class="availability-tools">
@@ -196,7 +255,7 @@
         <p id="roster-copy-hint" class="hint">Copies defaults to 1; set to 0 if you do not own the monster, or enter copies you already have. The selected tab sets the maximum; the optimizer reports extra copies to build.</p>
       </section>
       </section>
-      <footer>Historical win rates are descriptive, not predictions. Sample counts and snapshot details come from the imported data.</footer>
+      <footer>Historical win rates and rank gradients describe the logged sample; they are not predictions or causal effects. Wilson bounds capture sampling uncertainty, not contributor-selection bias.</footer>
     </main>
   </body>
 </html>

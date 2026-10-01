@@ -62,6 +62,7 @@
 
   function save() {
     try {
+      state.copiesByMode[state.mode] = state.copies;
       if (state.dataset) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       else localStorage.removeItem(STORAGE_KEY);
     } catch (error) {
@@ -84,6 +85,11 @@
     section.append(makeCell("h3", "What is blocking a complete portfolio?"));
     if (result.status === "timed_out") {
       section.append(makeCell("p", "The optimizer hit its search limit before it found a complete portfolio. Try a higher copy tab or adjust availability, then optimize again.", "result-summary"));
+      return section;
+    }
+    if (state.dataset.rankAware && !state.dataset.teams.some(team =>
+      Number.isInteger(team.g1Evidence && team.g1Evidence.scoreBps))) {
+      section.append(makeCell("p", "No defense has measured or uniquely reconstructible G1 evidence. Import the matching G1, G2, G3, and ALL tables, or add direct G1 samples. Candidates with unknown G1 performance are not assigned an ALL-rank substitute.", "result-summary"));
       return section;
     }
     if (missing.length) {
@@ -120,14 +126,58 @@
       state.dataset.monsters.find(monster => monster.id === id).name + " +" + count).join(", ");
   }
 
-  function initializeCopies(datasets, copies) {
-    for (const dataset of Object.values(datasets)) {
-      if (!dataset) continue;
-      for (const monster of dataset.monsters) {
-        if (copies[monster.id] === undefined) copies[monster.id] = 1;
-      }
+  function initializeCopies(dataset, copies) {
+    const initialized = copies || {};
+    if (!dataset) return initialized;
+    for (const monster of dataset.monsters) {
+      if (initialized[monster.id] === undefined) initialized[monster.id] = 1;
     }
-    return copies;
+    return initialized;
+  }
+
+  function selectMode(mode) {
+    state.mode = mode;
+    state.dataset = state.datasets[mode];
+    state.copies = initializeCopies(state.dataset, state.copiesByMode[mode]);
+    state.copiesByMode[mode] = state.copies;
+  }
+
+  function confidenceText(value) {
+    return value.toFixed(2) + "%";
+  }
+
+  function rankEvidenceText(team) {
+    const evidence = team.g1Evidence;
+    if (!evidence) return "—";
+    const parts = evidence.status === "unknown"
+      ? ["G1 unknown"]
+      : ["G1 " + confidenceText(evidence.winRate) + " / " +
+        evidence.battles.toLocaleString() + " (" + evidence.status + ")"];
+    if (evidence.status === "measured" && evidence.wilson95) {
+      parts.push("95% Wilson " + confidenceText(evidence.wilson95.lower) +
+        "–" + confidenceText(evidence.wilson95.upper));
+      parts.push("conservative score " + confidenceText(evidence.conservativeRate));
+    } else if (evidence.status === "inferred") {
+      parts.push("rounding range " + confidenceText(evidence.roundingRange.lower) +
+        "–" + confidenceText(evidence.roundingRange.upper));
+      parts.push("conservative score " + confidenceText(evidence.conservativeRate));
+    }
+    if (evidence.confidence) parts.push("sample support " + evidence.confidence);
+    for (const rank of ["G2", "G3", "ALL"]) {
+      const sample = team.rankData && team.rankData[rank];
+      if (sample) parts.push(rank + " " + confidenceText(sample.winRate) +
+        " / " + sample.battles.toLocaleString());
+    }
+    const g2 = team.rankData && team.rankData.G2;
+    const g3 = team.rankData && team.rankData.G3;
+    if (evidence.status !== "unknown" && g2) {
+      parts.push("G1→G2 " + (g2.winRate - evidence.winRate).toFixed(2) + " pp (descriptive)");
+    }
+    if (evidence.status !== "unknown" && g3) {
+      parts.push("G1→G3 " + (g3.winRate - evidence.winRate).toFixed(2) + " pp (descriptive)");
+    }
+    if (g2 && g3) parts.push("G2→G3 " + (g3.winRate - g2.winRate).toFixed(2) + " pp (descriptive)");
+    return parts.join(" · ");
   }
 
   function initialize() {
@@ -144,17 +194,23 @@
           datasets[mode] = GuildDefenseOptimizer.validateDataset(saved.dataset);
         }
         const mode = saved.mode === "wgb" && datasets.wgb ? "wgb" : datasets.siege ? "siege" : "wgb";
-        const copies = initializeCopies(datasets, saved.copies || {});
-        state = { datasets, dataset: datasets[mode], copies, cleanedLabels: saved.cleanedLabels || 0,
+        const copiesByMode = saved.copiesByMode && typeof saved.copiesByMode === "object" &&
+          !Array.isArray(saved.copiesByMode) ? saved.copiesByMode : {};
+        if (!saved.copiesByMode && saved.copies) copiesByMode[mode] = saved.copies;
+        copiesByMode.siege = copiesByMode.siege || {};
+        copiesByMode.wgb = copiesByMode.wgb || {};
+        const copies = initializeCopies(datasets[mode], copiesByMode[mode]);
+        copiesByMode[mode] = copies;
+        state = { datasets, dataset: datasets[mode], copies, copiesByMode, cleanedLabels: saved.cleanedLabels || 0,
           copyCap: [1, 2, 3, 4, 5].includes(saved.copyCap) ? saved.copyCap : 1,
           allowDuplicateTeams: saved.allowDuplicateTeams === true,
           requestedFour: saved.requestedFour ?? 4, requestedNatFive: saved.requestedNatFive ?? 6,
-          activeStep: ["import", "data", "optimize"].includes(saved.activeStep) ? saved.activeStep : "import", mode };
-      } else state = { datasets: { siege: null, wgb: null }, dataset: null, copies: {}, cleanedLabels: 0, copyCap: 1,
-        allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, activeStep: "import", mode: "siege" };
+          activeStep: ["intro", "import", "data", "optimize"].includes(saved.activeStep) ? saved.activeStep : "intro", mode };
+      } else state = { datasets: { siege: null, wgb: null }, dataset: null, copies: {}, copiesByMode: { siege: {}, wgb: {} }, cleanedLabels: 0, copyCap: 1,
+        allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, activeStep: "intro", mode: "siege" };
     } catch (error) {
-      state = { datasets: { siege: null, wgb: null }, dataset: null, copies: {}, cleanedLabels: 0, copyCap: 1,
-        allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, activeStep: "import", mode: "siege" };
+      state = { datasets: { siege: null, wgb: null }, dataset: null, copies: {}, copiesByMode: { siege: {}, wgb: {} }, cleanedLabels: 0, copyCap: 1,
+        allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, activeStep: "intro", mode: "siege" };
       showNotice("Saved data could not be loaded. Paste the tables again. " + error.message, true);
     }
     render();
@@ -164,32 +220,43 @@
     const body = $("#roster");
     body.replaceChildren();
     if (!state.dataset) return;
-    const appearances = new Map(state.dataset.monsters.map(monster => [monster.id, { count: 0, winRateTotal: 0 }]));
+    const appearances = new Map(state.dataset.monsters.map(monster =>
+      [monster.id, { count: 0, winRateTotal: 0, ratedCount: 0 }]));
     for (const team of state.dataset.teams) {
       for (const id of [team.leader, ...team.memberIds]) {
         const stats = appearances.get(id);
         stats.count++;
-        stats.winRateTotal += team.winRateBps / 100;
+        const rate = state.dataset.rankAware
+          ? team.g1Evidence && team.g1Evidence.winRate
+          : team.winRateBps / 100;
+        if (Number.isFinite(rate)) {
+          stats.winRateTotal += rate;
+          stats.ratedCount++;
+        }
       }
     }
     const monsters = state.dataset.monsters.map(monster => ({
       ...monster,
       stats: appearances.get(monster.id)
     })).sort((a, b) =>
-      (a.rosterGroup === "fourStar" ? 1 : 0) - (b.rosterGroup === "fourStar" ? 1 : 0) ||
+      (state.mode === "siege" ? (a.rosterGroup === "fourStar" ? 1 : 0) -
+        (b.rosterGroup === "fourStar" ? 1 : 0) : 0) ||
       b.stats.count - a.stats.count ||
-      (b.stats.winRateTotal / b.stats.count) - (a.stats.winRateTotal / a.stats.count) ||
+      (b.stats.winRateTotal / (b.stats.ratedCount || 1)) -
+        (a.stats.winRateTotal / (a.stats.ratedCount || 1)) ||
       a.name.localeCompare(b.name));
     let renderedGroup = "";
     for (const monster of monsters) {
-      const group = monster.rosterGroup === "fourStar" ? "fourStar" : "unknown";
+      const group = state.mode === "wgb" ? "all" :
+        monster.rosterGroup === "fourStar" ? "fourStar" : "unknown";
       if (group !== renderedGroup) {
         renderedGroup = group;
         const heading = document.createElement("tr");
         heading.className = "group-row";
-        heading.append(makeCell("th", group === "unknown" ? "5★ / unknown rarity" : "4★-or-lower monsters", null));
+        heading.append(makeCell("th", group === "all" ? "World Guild Battle monsters" :
+          group === "unknown" ? "5★ / unknown rarity" : "4★-or-lower monsters", null));
         const remainder = document.createElement("th");
-        remainder.colSpan = 4;
+        remainder.colSpan = state.mode === "siege" ? 4 : 3;
         heading.append(remainder);
         body.append(heading);
       }
@@ -237,39 +304,55 @@
       const name = document.createElement("td");
       name.textContent = monster.name;
       const count = monster.stats.count;
-      const average = count ? monster.stats.winRateTotal / count : 0;
+      const average = monster.stats.ratedCount
+        ? monster.stats.winRateTotal / monster.stats.ratedCount : 0;
       name.dataset.monsterName = "true";
       tr.append(available);
       if (state.mode === "siege") tr.append(copiesCell);
       tr.append(name,
         makeCell("td", String(count)),
-        makeCell("td", count ? average.toFixed(2) + "%" : "—"));
+        makeCell("td", monster.stats.ratedCount ? average.toFixed(2) + "%" : "—"));
       body.append(tr);
     }
     $("#roster thead").replaceChildren();
     const header = document.createElement("tr");
     for (const label of ["Available", ...(state.mode === "siege" ? ["Copies"] : []),
-      "Monster", "Defences", "Avg. WR"]) header.append(makeCell("th", label));
+      "Monster", "Defences", state.dataset.rankAware ? "Avg. G1 WR" : "Avg. WR"])
+      header.append(makeCell("th", label));
     $("#roster").closest("table").querySelector("thead").replaceChildren(header);
     filterMonsterList();
     updateAvailabilityCount();
   }
 
   function render() {
-    for (const step of ["import", "data", "optimize"]) {
+    state.dataset = state.datasets[state.mode];
+    for (const step of ["intro", "import", "data", "optimize"]) {
       const active = state.activeStep === step;
       $("#step-" + step).hidden = !active;
       $("#step-tab-" + step).setAttribute("aria-selected", String(active));
     }
-    document.querySelectorAll("[data-mode]").forEach(button => {
-      button.setAttribute("aria-pressed", String(button.dataset.mode === state.mode));
-      button.disabled = !state.datasets[button.dataset.mode];
-    });
+    $("#choose-siege").setAttribute("aria-pressed", String(state.mode === "siege"));
+    $("#choose-wgb").setAttribute("aria-pressed", String(state.mode === "wgb"));
+    $("#import-mode-title").textContent = state.mode === "siege" ? "Siege" : "World Guild Battle";
+    $("#siege-rank-import").hidden = state.mode !== "siege";
+    $("#wgb-rank-import").hidden = state.mode !== "wgb";
+    $("#legacy-siege-import").hidden = state.mode !== "siege";
+    $("#legacy-wgb-import").hidden = state.mode !== "wgb";
     $("#optimize").disabled = !state.dataset;
-    $("#mode-description").textContent = state.mode === "siege"
-      ? "Requests up to ten total defenses from the two pasted lists. If the requested mix is unavailable, the closest match is shown with options to fill any remaining slots."
-      : "Builds five teams from the pasted list without a rarity split.";
+    $("#mode-description").textContent = state.dataset && state.dataset.rankAware
+      ? "Rank-aware mode selects only defenses with measured or uniquely reconstructed G1 evidence, using a conservative Wilson-based score. Unrecoverable G1 evidence remains visible for discovery but is excluded from the portfolio."
+      : state.mode === "siege"
+        ? "Choose up to ten defenses across the 4-star and all-defenses remainder categories."
+        : "Builds five defenses from the World Guild Battle list, without a rarity split.";
+    $("#settings-description").textContent = state.mode === "siege"
+      ? "Siege defenses are separated into 4-star and all-defenses remainder categories."
+      : "World Guild Battle uses one defense list, without a monster-rarity split.";
+    $("#roster-description").textContent = state.mode === "siege"
+      ? "5★/unknown monsters appear first, then 4★-or-lower monsters. Within each group, most-used monsters appear first."
+      : "World Guild Battle uses one copy per monster; the list is ordered by defense appearances.";
     $("#siege-counts").hidden = state.mode !== "siege";
+    $("#remainder-label").textContent = state.dataset && state.dataset.rankAware
+      ? "All-defenses remainder" : "5★ / all-defenses remainder";
     $("#requested-four-star").value = String(state.requestedFour);
     $("#requested-nat-five").value = String(state.requestedNatFive);
     document.querySelectorAll("[data-copy-cap]").forEach(button => {
@@ -288,15 +371,22 @@
   }
 
   function renderCandidateTables() {
-    const siege = state.datasets.siege;
-    const wgb = state.datasets.wgb;
+    const siege = state.mode === "siege" ? state.datasets.siege : null;
+    const wgb = state.mode === "wgb" ? state.datasets.wgb : null;
     const fourStar = siege ? siege.teams.filter(team => team.siegeCategory === "fourStar") : [];
     const natFive = siege ? siege.teams.filter(team => team.siegeCategory === "natFive") : [];
     const wgbTeams = wgb ? wgb.teams : [];
     $("#candidate-summary").textContent =
-      (siege ? fourStar.length + " 4-star + " + natFive.length + " 5-star Siege defenses" : "Siege data not imported") +
-      " · " + (wgb ? wgbTeams.length + " WGB defenses" : "WGB data not imported") +
+      (siege ? fourStar.length + " Siege 4-star + " + natFive.length + " all-defenses remainder" :
+        wgb ? wgbTeams.length + " World Guild Battle defenses" : state.mode + " data not imported") +
+      (siege && siege.rankAware ? " · G1-evaluable: " +
+        siege.teams.filter(team => team.g1Evidence && team.g1Evidence.scoreBps !== undefined).length +
+        " · inferred: " + siege.teams.filter(team => team.g1Evidence && team.g1Evidence.status === "inferred").length +
+        " · unknown G1 excluded from ranked portfolios" : "") +
       (state.cleanedLabels ? " · " + state.cleanedLabels + " doubled labels cleaned." : ".");
+    $("#four-star-table-section").hidden = state.mode !== "siege";
+    $("#nat-five-table-section").hidden = state.mode !== "siege";
+    $("#wgb-table-section").hidden = state.mode !== "wgb";
     $("#four-star-table-section").classList.toggle("empty-table", !siege);
     $("#nat-five-table-section").classList.toggle("empty-table", !siege);
     $("#wgb-table-section").classList.toggle("empty-table", !wgb);
@@ -308,21 +398,57 @@
   function renderDefenseTable(selector, teams, dataset) {
     const body = $(selector);
     body.replaceChildren();
+    const table = body.closest("table");
     if (!dataset) {
+      table.querySelector("thead tr").replaceChildren(
+        ...["Leader", "Monster 2", "Monster 3", "Battles", "WR%"].map(label => makeCell("th", label))
+      );
       const row = document.createElement("tr");
-      row.append(makeCell("td", "No data imported yet.", "empty-table-message"));
+      const emptyCell = makeCell("td", "No data imported yet.", "empty-table-message");
+      emptyCell.colSpan = 5;
+      row.append(emptyCell);
+      body.append(row);
+      return;
+    }
+    const header = table.querySelector("thead tr");
+    const labels = ["Leader", "Monster 2", "Monster 3",
+      dataset.rankAware ? "Source sample" : "Battles",
+      dataset.rankAware ? "Source WR" : "WR%"];
+    if (dataset.rankAware) labels.push("Rank evidence");
+    header.replaceChildren(...labels.map(label => {
+      const heading = makeCell("th", label);
+      if (label === "Rank evidence") heading.className = "rank-evidence-column";
+      return heading;
+    }));
+    const rankHeader = table.querySelector(".rank-evidence-column");
+    if (rankHeader) rankHeader.hidden = !dataset.rankAware;
+    if (!teams.length) {
+      const row = document.createElement("tr");
+      const emptyCell = makeCell("td", dataset.rankAware
+        ? "No rank-scoped defenses in this category."
+        : "No defenses in this category.", "empty-table-message");
+      emptyCell.colSpan = labels.length;
+      row.append(emptyCell);
       body.append(row);
       return;
     }
     const sortedTeams = teams.slice().sort((a, b) =>
-      b.winRateBps - a.winRateBps || b.battles - a.battles || a.id.localeCompare(b.id));
+      (dataset.rankAware ? (b.g1Evidence?.scoreBps ?? -1) - (a.g1Evidence?.scoreBps ?? -1) :
+        b.winRateBps - a.winRateBps) ||
+      b.battles - a.battles || a.id.localeCompare(b.id));
     for (const team of sortedTeams) {
       const row = document.createElement("tr");
       const names = [team.leader, ...team.memberIds].map(id =>
         dataset.monsters.find(monster => monster.id === id).name);
       for (const name of names) row.append(makeCell("td", name));
-      row.append(makeCell("td", team.battles.toLocaleString()));
+      const sourceRank = dataset.rankAware
+        ? ["ALL", "G1", "G2", "G3"].find(rank => team.rankData && team.rankData[rank])
+        : null;
+      row.append(makeCell("td", dataset.rankAware
+        ? (sourceRank || "—") + " · " + team.battles.toLocaleString()
+        : team.battles.toLocaleString()));
       row.append(makeCell("td", (team.winRateBps / 100).toFixed(2) + "%"));
+      if (dataset.rankAware) row.append(makeCell("td", rankEvidenceText(team), "rank-evidence-cell"));
       body.append(row);
     }
   }
@@ -367,7 +493,8 @@
 
     const stats = document.createElement("div");
     stats.className = "result-stats";
-    stats.append(stat("Average win rate", result.averageWinRate.toFixed(2) + "%"));
+    stats.append(stat(state.dataset.rankAware ? "Average conservative G1 score" : "Average win rate",
+      result.averageWinRate.toFixed(2) + "%"));
     stats.append(stat("Defences selected", String(result.teams.length)));
     stats.append(stat("Monsters excluded", String(state.dataset.monsters.length -
       state.dataset.monsters.filter(monster => (state.copies[monster.id] ?? 1) > 0).length)));
@@ -377,8 +504,10 @@
       const foundNatFive = result.groups.find(group => group.key === "natFive").teams.length;
       const missingFour = Math.max(0, result.requested.fourStar - foundFour);
       const missingNatFive = Math.max(0, result.requested.natFive - foundNatFive);
+      const remainderName = state.dataset.rankAware
+        ? " all-defenses remainder" : " 5★ / all-defenses remainder";
       card.append(makeCell("p", "Requested " + result.requested.fourStar + " 4★ + " +
-        result.requested.natFive + " 5★; found " + foundFour + " + " + foundNatFive +
+        result.requested.natFive + remainderName + "; found " + foundFour + " + " + foundNatFive +
         (missingFour || missingNatFive ? ". Missing " + missingFour + " 4★ and " + missingNatFive + " 5★." : "."),
         "result-summary"));
     }
@@ -397,9 +526,10 @@
       const names = [team.leader, ...team.memberIds].map(id =>
         state.dataset.monsters.find(monster => monster.id === id).name);
       tile.append(makeCell("div", (index + 1) + ". " + names.join(" / "), "team-name"));
-      tile.append(makeCell("div",
-        (team.category === "fourStar" ? "4-star list" : team.category === "natFive" ? "All-defences remainder" : "WGB") +
-        " · " + (team.winRateBps / 100).toFixed(2) + "% · " + team.battles.toLocaleString() + " battles",
+      tile.append(makeCell("div", state.dataset.rankAware
+        ? rankEvidenceText(team)
+        : (team.category === "fourStar" ? "4-star list" : team.category === "natFive" ? "All-defences remainder" : "WGB") +
+          " · " + (team.winRateBps / 100).toFixed(2) + "% · " + team.battles.toLocaleString() + " battles",
         "team-meta"));
       list.append(tile);
     });
@@ -423,9 +553,10 @@
           const names = [team.leader, ...team.memberIds].map(id =>
             state.dataset.monsters.find(monster => monster.id === id).name);
           tile.append(makeCell("div", "Suggestion " + (index + 1) + ". " + names.join(" / "), "team-name"));
-          tile.append(makeCell("div",
-            (team.siegeCategory === "fourStar" ? "4-star list" : "All-defences remainder") +
-            " · " + (team.winRateBps / 100).toFixed(2) + "% · " + team.battles.toLocaleString() + " battles",
+          tile.append(makeCell("div", state.dataset.rankAware
+            ? rankEvidenceText(team)
+            : (team.siegeCategory === "fourStar" ? "4-star list" : "All-defences remainder") +
+              " · " + (team.winRateBps / 100).toFixed(2) + "% · " + team.battles.toLocaleString() + " battles",
             "team-meta"));
           fillList.append(tile);
         });
@@ -479,7 +610,10 @@
       $("#results").replaceChildren(renderResult(result, null, suggestions));
       const partial = result.requested &&
         result.teams.length < result.requested.fourStar + result.requested.natFive;
-      showNotice(result.status === "infeasible" ? "No defense can be built with the current copy counts." :
+      showNotice(result.status === "infeasible" ? state.dataset.rankAware &&
+        !state.dataset.teams.some(team => Number.isInteger(team.g1Evidence && team.g1Evidence.scoreBps))
+        ? "No candidate has eligible G1 evidence. Check the imported rank tables and snapshot."
+        : "No defense can be built with the current copy counts." :
         result.status === "timed_out" ? "A feasible portfolio was found, but optimality was not proven." :
           partial ? "Closest available defense mix found. See the missing categories and fill suggestions below." :
             "Defence options optimized for the selected copy limit.", result.status !== "optimal" || partial);
@@ -500,10 +634,12 @@
       const mode = dataset.mode || state.mode;
       dataset.mode = mode;
       state.datasets[mode] = dataset;
-      state.mode = mode;
-      state.dataset = dataset;
-      state.copies = initializeCopies(state.datasets, state.copies);
+      selectMode(mode);
       state.cleanedLabels = 0;
+      if (dataset.rankAware && mode === "siege") {
+        state.requestedFour = 10;
+        state.requestedNatFive = 0;
+      }
       $("#results").replaceChildren();
       state.activeStep = "data";
       render();
@@ -516,40 +652,103 @@
   });
   $("#import-paste").addEventListener("click", () => {
     try {
-      const fourStarText = $("#four-star-paste").value;
-      const siegeAllText = $("#siege-all-paste").value;
-      const wgbText = $("#wgb-paste").value;
-      if (![fourStarText, siegeAllText, wgbText].some(text => text.trim())) {
-        throw new Error("Paste at least one table before cleaning the data.");
-      }
-      let siegeImport = null;
-      let wgbImport = null;
-      if (fourStarText.trim() || siegeAllText.trim()) {
-        siegeImport = GuildDefenseOptimizer.datasetFromPastedTables({
+      let imported;
+      if (state.mode === "siege") {
+        const fourStarText = $("#four-star-paste").value;
+        const siegeAllText = $("#siege-all-paste").value;
+        imported = GuildDefenseOptimizer.datasetFromPastedTables({
           mode: "siege", fourStarText, allText: siegeAllText
         });
+      } else {
+        imported = GuildDefenseOptimizer.datasetFromPastedTables({
+          mode: "wgb", allText: $("#wgb-paste").value
+        });
       }
-      if (wgbText.trim()) {
-        wgbImport = GuildDefenseOptimizer.datasetFromPastedTables({ mode: "wgb", allText: wgbText });
-      }
-      if (siegeImport) state.datasets.siege = GuildDefenseOptimizer.validateDataset(siegeImport.dataset);
-      if (wgbImport) state.datasets.wgb = GuildDefenseOptimizer.validateDataset(wgbImport.dataset);
-      state.copies = initializeCopies(state.datasets, state.copies);
-      state.mode = siegeImport ? "siege" : "wgb";
-      state.dataset = state.datasets[state.mode];
-      state.cleanedLabels = (siegeImport ? siegeImport.cleanedLabels : 0) +
-        (wgbImport ? wgbImport.cleanedLabels : 0);
+      state.datasets[state.mode] = GuildDefenseOptimizer.validateDataset(imported.dataset);
+      selectMode(state.mode);
+      state.cleanedLabels = imported.cleanedLabels;
       state.activeStep = "data";
       $("#results").replaceChildren();
       render();
-      const counts = [];
-      if (siegeImport) counts.push(siegeImport.fourStarCount + " four-star + " + siegeImport.natFiveCount + " 5-star Siege defenses");
-      if (wgbImport) counts.push(wgbImport.natFiveCount + " WGB defenses");
-      $("#paste-result").textContent = "Cleaned " + counts.join(" and ") + ".";
-      showNotice("Paste cleaned. Review the three defense tables, then continue to optimization.", false);
+      const summary = state.mode === "siege"
+        ? imported.fourStarCount + " four-star + " + imported.natFiveCount + " all-defenses remainder"
+        : imported.natFiveCount + " WGB defenses";
+      $("#paste-result").textContent = "Imported " + summary + ".";
+      showNotice("Legacy table data imported. Review the selected mode's data before optimizing.", false);
     } catch (error) {
       showNotice("Paste import failed: " + error.message, true);
       $("#paste-result").textContent = error.message;
+    }
+  });
+  $("#import-ranked-paste").addEventListener("click", () => {
+    try {
+      const imported = GuildDefenseOptimizer.datasetFromRankPastedTables({
+        mode: "siege",
+        snapshot: $("#rank-snapshot").value,
+        fourStarTables: {
+          G1: $("#siege-four-g1").value,
+          G2: $("#siege-four-g2").value,
+          G3: $("#siege-four-g3").value,
+          ALL: $("#siege-four-all").value
+        },
+        allTables: {
+          G1: $("#siege-all-g1").value,
+          G2: $("#siege-all-g2").value,
+          G3: $("#siege-all-g3").value,
+          ALL: $("#siege-all-all").value
+        }
+      });
+      state.datasets.siege = imported.dataset;
+      selectMode("siege");
+      state.cleanedLabels = imported.cleanedLabels;
+      state.activeStep = "data";
+      $("#results").replaceChildren();
+      render();
+      const missingTables = ["G1", "G2", "G3", "ALL"].flatMap(rank => [
+        imported.counts.fourStar[rank] === undefined ? "4-star " + rank : null,
+        imported.counts.all[rank] === undefined ? "all-defenses " + rank : null
+      ]).filter(Boolean);
+      $("#rank-paste-result").textContent = "Imported " + imported.fourStarCount +
+        " known 4-star teams and " + imported.natFiveCount +
+        " all-defenses remainder teams. Teams appearing in any 4-star rank list were removed from the remainder." +
+        (missingTables.length ? " Missing input tables: " + missingTables.join(", ") +
+          "; those rank estimates remain unavailable." : "");
+      showNotice("Siege rank tables imported. Confirm the supplied tables share matching snapshots and filters.", false);
+    } catch (error) {
+      $("#rank-paste-result").textContent = error.message;
+      showNotice("Siege rank import failed: " + error.message, true);
+    }
+  });
+  $("#import-wgb-ranked").addEventListener("click", () => {
+    try {
+      const imported = GuildDefenseOptimizer.datasetFromRankPastedTables({
+        mode: "wgb",
+        snapshot: $("#rank-snapshot").value,
+        tables: {
+          G1: $("#wgb-g1").value,
+          G2: $("#wgb-g2").value,
+          G3: $("#wgb-g3").value,
+          ALL: $("#wgb-all").value
+        }
+      });
+      state.datasets.wgb = imported.dataset;
+      selectMode("wgb");
+      state.cleanedLabels = imported.cleanedLabels;
+      state.activeStep = "data";
+      $("#results").replaceChildren();
+      render();
+      const missingTables = ["G1", "G2", "G3", "ALL"]
+        .filter(rank => imported.counts[rank] === undefined);
+      $("#wgb-rank-paste-result").textContent = "Imported WGB rank tables (" +
+        ["G1", "G2", "G3", "ALL"].filter(rank => imported.counts[rank] !== undefined)
+          .map(rank => rank + ": " + imported.counts[rank]).join(" · ") +
+        "). No rarity categories are applied." +
+        (missingTables.length ? " Missing input tables: " + missingTables.join(", ") +
+          "; those rank estimates remain unavailable." : "");
+      showNotice("WGB rank tables imported. Confirm the supplied tables share matching snapshots and filters.", false);
+    } catch (error) {
+      $("#wgb-rank-paste-result").textContent = error.message;
+      showNotice("WGB rank import failed: " + error.message, true);
     }
   });
   $("#replace-data").addEventListener("click", () => {
@@ -559,12 +758,19 @@
     state.datasets = { siege: null, wgb: null };
     state.dataset = null;
     state.copies = {};
+    state.copiesByMode = { siege: {}, wgb: {} };
     state.cleanedLabels = 0;
-    for (const selector of ["#four-star-paste", "#siege-all-paste", "#wgb-paste"]) $(selector).value = "";
+    for (const selector of ["#four-star-paste", "#siege-all-paste", "#wgb-paste", "#rank-snapshot",
+      "#siege-four-g1", "#siege-four-g2", "#siege-four-g3", "#siege-four-all",
+      "#siege-all-g1", "#siege-all-g2", "#siege-all-g3", "#siege-all-all",
+      "#wgb-g1", "#wgb-g2", "#wgb-g3", "#wgb-all"])
+      $(selector).value = "";
     $("#paste-result").textContent = "";
+    $("#rank-paste-result").textContent = "";
+    $("#wgb-rank-paste-result").textContent = "";
     $("#results").replaceChildren();
     state.mode = "siege";
-    state.activeStep = "import";
+    state.activeStep = "intro";
     render();
     showNotice("Imported data cleared.", false);
   });
@@ -586,13 +792,13 @@
     save();
     optimize();
   }));
-  document.querySelectorAll("[data-mode]").forEach(button => button.addEventListener("click", () => {
-    if (!state.datasets[button.dataset.mode]) return;
-    state.mode = button.dataset.mode;
-    state.dataset = state.datasets[state.mode];
-    $("#results").replaceChildren();
-    render();
-  }));
+  for (const [selector, mode] of [["#choose-siege", "siege"], ["#choose-wgb", "wgb"]]) {
+    $(selector).addEventListener("click", () => {
+      selectMode(mode);
+      state.activeStep = "import";
+      render();
+    });
+  }
   document.querySelectorAll(".workflow-tabs [role='tab'], [data-step]").forEach(button =>
     button.addEventListener("click", () => setStep(button.dataset.step || button.id.replace("step-tab-", ""))));
   for (const [selector, key] of [
@@ -652,7 +858,7 @@
   initialize();
 
   function setStep(step) {
-    if (!["import", "data", "optimize"].includes(step)) return;
+    if (!["intro", "import", "data", "optimize"].includes(step)) return;
     state.activeStep = step;
     render();
   }

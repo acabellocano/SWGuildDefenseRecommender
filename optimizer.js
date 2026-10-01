@@ -1,9 +1,111 @@
 (function (root) {
   "use strict";
 
+  const RANKS = ["G1", "G2", "G3", "ALL"];
+
+  function wilsonInterval(wins, battles) {
+    const z = 1.959963984540054;
+    const rate = wins / battles;
+    const z2 = z * z;
+    const denominator = 1 + z2 / battles;
+    const center = rate + z2 / (2 * battles);
+    const margin = z * Math.sqrt(rate * (1 - rate) / battles + z2 / (4 * battles * battles));
+    return {
+      lower: Math.max(0, (center - margin) / denominator),
+      upper: Math.min(1, (center + margin) / denominator)
+    };
+  }
+
+  function winsFromRoundedRate(sample) {
+    const precision = Number.isInteger(sample.precision) ? sample.precision : 1;
+    const halfStep = Math.pow(10, -precision) / 2;
+    const lowerRate = Math.max(0, sample.winRate - halfStep) / 100;
+    const upperRate = Math.min(100, sample.winRate + halfStep) / 100;
+    return {
+      minimum: Math.max(0, Math.ceil(lowerRate * sample.battles - 1e-10)),
+      maximum: Math.min(sample.battles, Math.floor(upperRate * sample.battles + 1e-10))
+    };
+  }
+
+  function confidenceTier(battles) {
+    return battles >= 5000 ? "high" : battles >= 2000 ? "moderate" : "limited";
+  }
+
+  function makeG1Evidence(rankData, rankTablesProvided) {
+    const direct = rankData && rankData.G1;
+    if (direct) {
+      const wins = winsFromRoundedRate(direct);
+      const representativeWins = Math.round(direct.winRate * direct.battles / 100);
+      const interval = wilsonInterval(representativeWins, direct.battles);
+      const conservative = wilsonInterval(wins.minimum, direct.battles).lower;
+      return {
+        status: "measured",
+        battles: direct.battles,
+        winRate: direct.winRate,
+        roundingRange: {
+          lower: wins.minimum * 100 / direct.battles,
+          upper: wins.maximum * 100 / direct.battles
+        },
+        wilson95: { lower: interval.lower * 100, upper: interval.upper * 100 },
+        conservativeRate: conservative * 100,
+        scoreBps: Math.floor(conservative * 10000),
+        confidence: confidenceTier(direct.battles)
+      };
+    }
+
+    const all = rankData && rankData.ALL;
+    const g2 = rankData && rankData.G2;
+    const g3 = rankData && rankData.G3;
+    if (!all || !g2 || !g3 ||
+        !["G1", "G2", "G3", "ALL"].every(rank => rankTablesProvided && rankTablesProvided.includes(rank))) {
+      return { status: "unknown", reason: "G1 performance cannot be uniquely reconstructed from the imported rank tables." };
+    }
+
+    const battles = all.battles - g2.battles - g3.battles;
+    if (battles <= 0) {
+      return { status: "unknown", reason: "No positive residual G1 sample can be established." };
+    }
+
+    const allWins = winsFromRoundedRate(all);
+    const g2Wins = winsFromRoundedRate(g2);
+    const g3Wins = winsFromRoundedRate(g3);
+    const minimumWins = Math.max(0, allWins.minimum - g2Wins.maximum - g3Wins.maximum);
+    const maximumWins = Math.min(battles, allWins.maximum - g2Wins.minimum - g3Wins.minimum);
+    if (minimumWins > maximumWins) {
+      return { status: "unknown", reason: "Rounded rank percentages do not support a consistent residual G1 estimate." };
+    }
+
+    const estimateWins = all.battles * all.winRate / 100 -
+      g2.battles * g2.winRate / 100 - g3.battles * g3.winRate / 100;
+    const estimate = Math.max(0, Math.min(battles, estimateWins)) * 100 / battles;
+    const conservative = wilsonInterval(minimumWins, battles).lower;
+    return {
+      status: "inferred",
+      battles,
+      winRate: estimate,
+      roundingRange: {
+        lower: minimumWins * 100 / battles,
+        upper: maximumWins * 100 / battles
+      },
+      conservativeRate: conservative * 100,
+      scoreBps: Math.floor(conservative * 10000),
+      confidence: confidenceTier(battles)
+    };
+  }
+
   function validateDataset(input) {
     if (!input || typeof input !== "object" || !Array.isArray(input.monsters) || !Array.isArray(input.teams)) {
       throw new Error("Expected JSON with monsters and teams arrays.");
+    }
+    if (input.rankAware === true && input.mode !== "siege" && input.mode !== "wgb") {
+      throw new Error("Rank-aware datasets must declare Siege or World Guild Battle mode.");
+    }
+    if (input.rankAware === true && !Array.isArray(input.rankTablesProvided)) {
+      throw new Error("Rank-aware datasets must identify which rank tables were imported.");
+    }
+    if (input.rankAware === true && (input.rankTablesProvided.some(rank => !RANKS.includes(rank)) ||
+        new Set(input.rankTablesProvided).size !== input.rankTablesProvided.length)) {
+      throw new Error("rankTablesProvided must contain unique G1, G2, G3, or ALL names.");
     }
     const monsters = new Map();
     for (const monster of input.monsters) {
@@ -48,6 +150,47 @@
         winRateBps: Math.round(winRate * 100),
         battles
       };
+      if (team.rankData !== undefined) {
+        if (!team.rankData || typeof team.rankData !== "object" || Array.isArray(team.rankData)) {
+          throw new Error("rankData must map G1, G2, G3, and ALL to battle samples.");
+        }
+        if (Object.keys(team.rankData).some(rank => !RANKS.includes(rank))) {
+          throw new Error("rankData contains an unsupported rank key.");
+        }
+        normalizedTeam.rankData = {};
+        for (const rank of RANKS) {
+          const sample = team.rankData[rank];
+          if (sample === undefined) continue;
+          const rankRate = Number(sample && sample.winRate);
+          const rankBattles = Number(sample && sample.battles);
+          const precision = sample && (sample.precision ?? sample.winRatePrecision);
+          if (!Number.isFinite(rankRate) || rankRate < 0 || rankRate > 100 ||
+              !Number.isInteger(rankBattles) || rankBattles < 1 ||
+              (precision !== undefined && (!Number.isInteger(precision) || precision < 0 || precision > 4))) {
+            throw new Error("Each rank sample needs a valid winRate, positive integer battles, and up to four decimal places of precision.");
+          }
+          normalizedTeam.rankData[rank] = {
+            winRate: rankRate,
+            battles: rankBattles,
+            precision: precision === undefined ? 1 : precision
+          };
+        }
+        const teamRankTables = team.rankTablesProvided ?? input.rankTablesProvided;
+        if (!Array.isArray(teamRankTables) || teamRankTables.some(rank => !RANKS.includes(rank)) ||
+            new Set(teamRankTables).size !== teamRankTables.length) {
+          throw new Error("Each rank-aware team must identify its unique supplied rank tables.");
+        }
+        if (Object.keys(normalizedTeam.rankData).some(rank => !teamRankTables.includes(rank))) {
+          throw new Error("A rank sample cannot exist unless that rank table was supplied for the team.");
+        }
+        normalizedTeam.rankTablesProvided = teamRankTables.slice();
+        normalizedTeam.g1Evidence = makeG1Evidence(normalizedTeam.rankData, teamRankTables);
+      }
+      if (input.rankAware === true && !normalizedTeam.g1Evidence) {
+        normalizedTeam.rankData = {};
+        normalizedTeam.rankTablesProvided = input.rankTablesProvided.slice();
+        normalizedTeam.g1Evidence = makeG1Evidence(normalizedTeam.rankData, normalizedTeam.rankTablesProvided);
+      }
       if (team.siegeCategory === "fourStar" || team.siegeCategory === "natFive") {
         normalizedTeam.siegeCategory = team.siegeCategory;
       }
@@ -63,6 +206,9 @@
       title: typeof input.title === "string" ? input.title : "Imported candidate data",
       snapshot: typeof input.snapshot === "string" ? input.snapshot : "Snapshot not specified",
       mode: input.mode === "siege" || input.mode === "wgb" ? input.mode : null,
+      rankAware: input.rankAware === true,
+      rankTablesProvided: Array.isArray(input.rankTablesProvided)
+        ? input.rankTablesProvided.filter(rank => RANKS.includes(rank)) : [],
       monsters: Array.from(monsters.values()),
       teams
     };
@@ -119,7 +265,9 @@
       if (new Set(names.map(name => name.toLocaleLowerCase())).size !== 3) {
         throw new Error(sourceLabel + ", row " + rowNumber + ": a team must contain three distinct monsters.");
       }
-      teams.push({ names, battles, winRate, rowNumber });
+      const rateText = cells[columns.winRate].trim().replace(/\s*%$/, "").trim();
+      const precision = rateText.includes(".") ? rateText.length - rateText.indexOf(".") - 1 : 0;
+      teams.push({ names, battles, winRate, precision, rowNumber });
     }
     return { teams, cleanedLabels };
   }
@@ -170,6 +318,119 @@
       fourStarCount: fourStar.teams.length,
       natFiveCount: remaining.length
     };
+  }
+
+  function datasetFromRankPastedTables(options) {
+    options = options || {};
+    const mode = options && options.mode || "siege";
+    if (mode !== "siege" && mode !== "wgb") throw new Error("Choose Siege or World Guild Battle.");
+    const readTables = (tables, label) => {
+      const teamsByKey = new Map();
+      const counts = {};
+      const rankTablesProvided = [];
+      let cleanedLabels = 0;
+      for (const rank of RANKS) {
+        const text = String(tables && tables[rank] || "").trim();
+        if (!text) continue;
+        const parsed = parsePasteTable(text, label + " " + rank + " table");
+        rankTablesProvided.push(rank);
+        counts[rank] = parsed.teams.length;
+        cleanedLabels += parsed.cleanedLabels;
+        const seen = new Set();
+        for (const team of parsed.teams) {
+          const key = pasteTeamKey(team.names);
+          if (seen.has(key)) {
+            throw new Error(label + " " + rank + " table contains the same team more than once: " + team.names.join(" / "));
+          }
+          seen.add(key);
+          let entry = teamsByKey.get(key);
+          if (!entry) {
+            entry = { names: team.names, rankData: {}, rankTablesProvided };
+            teamsByKey.set(key, entry);
+          }
+          entry.rankData[rank] = {
+            battles: team.battles,
+            winRate: team.winRate,
+            precision: team.precision
+          };
+        }
+      }
+      return { teamsByKey, counts, rankTablesProvided, cleanedLabels };
+    };
+    const snapshot = String(options.snapshot || "").trim() || "Rank-scoped " +
+      (mode === "siege" ? "Siege" : "World Guild Battle") + " paste";
+
+    if (mode === "wgb") {
+      const imported = readTables(options.tables, "WGB");
+      if (!imported.teamsByKey.size) throw new Error("Paste at least one rank-scoped WGB table.");
+      const dataset = makeRankAwareDataset(Array.from(imported.teamsByKey.values()), {
+        mode, snapshot, rankTablesProvided: imported.rankTablesProvided
+      });
+      return { dataset, counts: imported.counts, cleanedLabels: imported.cleanedLabels };
+    }
+
+    const fourStar = readTables(options.fourStarTables || options.tables, "Siege 4-star");
+    const all = readTables(options.allTables, "Siege all-defences");
+    if (!fourStar.teamsByKey.size && !all.teamsByKey.size) {
+      throw new Error("Paste at least one 4-star or all-defences Siege rank table.");
+    }
+    const fourStarKeys = new Set(fourStar.teamsByKey.keys());
+    const fourStarRows = Array.from(fourStar.teamsByKey.values(), entry => ({
+      ...entry, siegeCategory: "fourStar"
+    }));
+    const remainderRows = Array.from(all.teamsByKey.entries())
+      .filter(([key]) => !fourStarKeys.has(key))
+      .map(([, entry]) => ({ ...entry, siegeCategory: "natFive" }));
+    const dataset = makeRankAwareDataset(fourStarRows.concat(remainderRows), {
+      mode,
+      snapshot,
+      rankTablesProvided: Array.from(new Set([
+        ...fourStar.rankTablesProvided,
+        ...all.rankTablesProvided
+      ]))
+    });
+    return {
+      dataset,
+      counts: { fourStar: fourStar.counts, all: all.counts },
+      fourStarCount: fourStarRows.length,
+      natFiveCount: remainderRows.length,
+      cleanedLabels: fourStar.cleanedLabels + all.cleanedLabels
+    };
+  }
+
+  function makeRankAwareDataset(entries, options) {
+    const monsters = new Map();
+    const teams = entries.map(entry => {
+      for (const name of entry.names) {
+        if (!monsters.has(name)) monsters.set(name, {
+          id: name,
+          name,
+          naturalStars: 0,
+          rosterGroup: entry.siegeCategory === "fourStar" ? "fourStar" : "unknown"
+        });
+      }
+      const displaySample = entry.rankData.ALL || entry.rankData.G1 ||
+        entry.rankData.G2 || entry.rankData.G3;
+      const team = {
+        leader: entry.names[0],
+        members: entry.names.slice(1),
+        battles: displaySample.battles,
+        winRate: displaySample.winRate,
+        rankData: entry.rankData,
+        rankTablesProvided: entry.rankTablesProvided
+      };
+      if (entry.siegeCategory) team.siegeCategory = entry.siegeCategory;
+      return team;
+    });
+    return validateDataset({
+      title: "Rank-scoped " + (options.mode === "siege" ? "Siege" : "World Guild Battle") + " data",
+      snapshot: options.snapshot,
+      mode: options.mode,
+      rankAware: true,
+      rankTablesProvided: options.rankTablesProvided,
+      monsters: Array.from(monsters.values()),
+      teams
+    });
   }
 
   function pasteTeamKey(names) {
@@ -249,6 +510,10 @@
     ];
   }
 
+  function objectiveBps(dataset, team) {
+    return dataset.rankAware ? team.g1Evidence && team.g1Evidence.scoreBps : team.winRateBps;
+  }
+
   function solve(datasetInput, rosterInput, mode, budget, options) {
     const dataset = validateDataset(datasetInput);
     if (!Number.isInteger(budget) || budget < 0) throw new Error("The extra-copy budget must be a non-negative whole number.");
@@ -257,8 +522,11 @@
     const groups = makeGroups(dataset, mode, opts.requirements);
     for (const group of groups) {
       if (!Number.isInteger(group.count) || group.count < 0) throw new Error("Team requirements must be non-negative whole numbers.");
-      group.teams = group.teams.filter(team => team.memberIds.concat(team.leader).every(id => roster.get(id).owned > 0));
-      group.teams.sort((a, b) => b.winRateBps - a.winRateBps || a.id.localeCompare(b.id));
+      group.teams = group.teams.filter(team =>
+        team.memberIds.concat(team.leader).every(id => roster.get(id).owned > 0) &&
+        (!dataset.rankAware || Number.isInteger(objectiveBps(dataset, team))));
+      group.teams.sort((a, b) =>
+        objectiveBps(dataset, b) - objectiveBps(dataset, a) || a.id.localeCompare(b.id));
       if (group.count && !group.teams.length) {
         return { status: "infeasible", reason: "No eligible teams for the " + group.key + " category.",
           teams: [], totalWinRateBps: 0, averageWinRate: 0, additionalCopies: {}, additionalCopyCount: 0, nodes: 0 };
@@ -314,7 +582,7 @@
         for (let teamIndex = index; teamIndex < group.teams.length; teamIndex++) {
           const team = group.teams[teamIndex];
           const uses = Math.min(remaining, maxTeamUses(team));
-          for (let use = 0; use < uses; use++) candidateScores.push(team.winRateBps);
+          for (let use = 0; use < uses; use++) candidateScores.push(objectiveBps(dataset, team));
         }
         candidateScores.sort((a, b) => b - a);
         if (candidateScores.length < remaining) return -Infinity;
@@ -360,7 +628,8 @@
           }
           selected[groupIndex].push(team);
           const nextIndex = allowDuplicateTeams ? i : i + 1;
-          visit(groupIndex, countAlready + 1, nextIndex, score + team.winRateBps, extraCopies + added);
+          visit(groupIndex, countAlready + 1, nextIndex,
+            score + objectiveBps(dataset, team), extraCopies + added);
           selected[groupIndex].pop();
           copyDelta(team, -1);
         }
@@ -400,6 +669,7 @@
   function solveClosest(datasetInput, rosterInput, mode, budget, options) {
     if (mode !== "siege") return solve(datasetInput, rosterInput, mode, budget, options);
     const opts = options || {};
+    const dataset = validateDataset(datasetInput);
     const requested = opts.requirements || {};
     const wantedFour = requested.fourStar === undefined ? 4 : requested.fourStar;
     const wantedNatFive = requested.natFive === undefined ? 6 : requested.natFive;
@@ -407,6 +677,21 @@
         !Number.isInteger(wantedNatFive) || wantedNatFive < 0 ||
         wantedFour + wantedNatFive > 10) {
       throw new Error("Requested Siege defenses must be non-negative whole numbers with a combined maximum of 10.");
+    }
+    if (dataset.rankAware && !dataset.teams.some(team =>
+      Number.isInteger(objectiveBps(dataset, team)))) {
+      return {
+        status: "infeasible",
+        reason: "No defense has measured or uniquely reconstructible G1 evidence.",
+        teams: [],
+        groups: [],
+        totalWinRateBps: 0,
+        averageWinRate: 0,
+        additionalCopies: {},
+        additionalCopyCount: 0,
+        nodes: 0,
+        requested: { fourStar: wantedFour, natFive: wantedNatFive }
+      };
     }
 
     let timedOut = false;
@@ -472,11 +757,13 @@
     const selectedIds = new Set(result.teams.map(team => team.id));
     let extraBuilds = result.additionalCopyCount || 0;
     const suggestions = [];
-    const candidates = dataset.teams.slice().sort((a, b) =>
-      b.winRateBps - a.winRateBps || a.id.localeCompare(b.id));
+    const candidates = dataset.teams.filter(team =>
+      !dataset.rankAware || Number.isInteger(objectiveBps(dataset, team))).sort((a, b) =>
+      objectiveBps(dataset, b) - objectiveBps(dataset, a) || a.id.localeCompare(b.id));
     while (result.teams.length + suggestions.length < targetCount) {
       const next = candidates.find(team => {
         if (dataset.mode === "siege" && !team.siegeCategory) return false;
+        if (dataset.rankAware && !Number.isInteger(objectiveBps(dataset, team))) return false;
         if (opts.allowDuplicateTeams !== true && selectedIds.has(team.id)) return false;
         let neededBuilds = 0;
         for (const id of [team.leader, ...team.memberIds]) {
@@ -500,7 +787,17 @@
     return suggestions;
   }
 
-  const api = { validateDataset, parsePasteTable, datasetFromPastedTables, solve, solveClosest, suggestFillTeams };
+  const api = {
+    validateDataset,
+    parsePasteTable,
+    datasetFromPastedTables,
+    datasetFromRankPastedTables,
+    wilsonInterval,
+    makeG1Evidence,
+    solve,
+    solveClosest,
+    suggestFillTeams
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.GuildDefenseOptimizer = api;
 })(typeof self !== "undefined" ? self : globalThis);

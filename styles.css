@@ -66,29 +66,38 @@ h2 { font-size: 1.18rem; margin: 0 0 6px; }
 .theme-control > span:first-child { color: var(--green); font-size: 1.1rem; }
 .theme-control select { padding: 8px 30px 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--text); cursor: pointer; }
 .paste-actions { display: flex; align-items: center; gap: 16px; margin-top: 14px; }
-.paste-actions details { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: .85rem; }
-.paste-actions summary { cursor: pointer; }
-.paste-actions details[open] { display: flex; }
-.paste-actions details .import-button { display: inline-block; padding: 7px 10px; background: white; color: var(--green); border: 1px solid #b7cec3; }
-.paste-actions details .import-button input { display: none; }
 .paste-result { min-height: 1.2em; }
+.rank-import { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.rank-import summary { color: var(--green); font-weight: 700; cursor: pointer; }
+.rank-import > p { max-width: 900px; }
+.rank-paste-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 14px 0; }
+.snapshot-label { display: grid; gap: 7px; max-width: 480px; margin-top: 14px; font-weight: 650; font-size: .88rem; }
+.snapshot-label input { padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); }
+.legacy-import { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
+.legacy-import summary { color: var(--muted); font-weight: 650; cursor: pointer; }
+.legacy-import .paste-grid { margin: 14px 0; }
+.rank-evidence-column { min-width: 350px; }
+.rank-evidence-cell { min-width: 350px; color: var(--muted); font-size: .78rem; line-height: 1.5; }
 .workflow-tabs { display: flex; gap: 8px; padding: 5px; margin: 16px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
 .workflow-tabs button { flex: 1; padding: 11px 14px; border: 0; border-radius: 7px; background: transparent; color: #53645b; font-weight: 700; cursor: pointer; }
 .workflow-tabs button[aria-selected="true"] { color: var(--green-dark); background: var(--surface); box-shadow: 0 1px 4px #20332820; }
-.workflow-tabs button:focus-visible, .mode-switch button:focus-visible { outline: 2px solid #83b59b; outline-offset: 2px; }
+.workflow-tabs button:focus-visible { outline: 2px solid #83b59b; outline-offset: 2px; }
+.mode-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.mode-card { display: grid; gap: 9px; min-height: 140px; padding: 22px; text-align: left; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-tint); color: var(--text); cursor: pointer; }
+.mode-card strong { color: var(--green); font-size: 1.15rem; }
+.mode-card span { color: var(--muted); line-height: 1.5; }
+.mode-card:hover, .mode-card[aria-pressed="true"] { border-color: var(--green); box-shadow: 0 4px 12px #2033280c; }
+.mode-card:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .step-actions { display: flex; justify-content: space-between; gap: 12px; margin: 16px 0; }
 .candidate-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .candidate-columns .defense-table-section { min-width: 0; margin-top: 0; }
+.candidate-columns #wgb-table-section { grid-column: 1 / -1; }
 .candidate-columns .defense-table-section h3 { min-height: 2.5em; }
 .candidate-columns .table-scroll { max-height: 540px; }
 .candidate-columns table { min-width: 560px; }
 .empty-table-message { color: var(--muted); }
 .empty-table .table-scroll { background: #f8faf8; }
 .settings-row { display: flex; gap: 18px; align-items: end; flex-wrap: wrap; }
-.mode-switch { display: flex; gap: 5px; align-items: center; padding: 4px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); }
-.mode-switch button { padding: 8px 12px; border: 0; border-radius: 6px; background: transparent; color: #53645b; font: inherit; cursor: pointer; }
-.mode-switch button[aria-pressed="true"] { background: white; color: var(--green-dark); box-shadow: 0 1px 4px #20332820; }
-.mode-switch button:disabled { opacity: .5; cursor: not-allowed; }
 .copy-tabs { display: flex; gap: 3px; padding: 3px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 9px; }
 .copy-tabs button { border: 0; border-radius: 6px; padding: 8px 11px; background: transparent; color: #53645b; font-weight: 650; cursor: pointer; }
 .copy-tabs button:hover { background: #fff; }
@@ -181,10 +190,10 @@ tbody tr:not(.group-row):hover { background: var(--surface-tint); }
 :root[data-color-scheme="dark"] .secondary-button,
 :root[data-color-scheme="dark"] .theme-control select,
 :root[data-color-scheme="dark"] .paste-panel textarea,
+:root[data-color-scheme="dark"] .snapshot-label input,
 :root[data-color-scheme="dark"] .availability-tools input[type="search"],
 :root[data-color-scheme="dark"] .roster-panel td input[type="number"],
 :root[data-color-scheme="dark"] .exclude-paste textarea,
-:root[data-color-scheme="dark"] .mode-switch button[aria-pressed="true"],
 :root[data-color-scheme="dark"] .copy-tabs button.selected,
 :root[data-color-scheme="dark"] .copy-tabs button[aria-pressed="true"],
 :root[data-color-scheme="dark"] .workflow-tabs button[aria-selected="true"] {
@@ -194,9 +203,9 @@ tbody tr:not(.group-row):hover { background: var(--surface-tint); }
 }
 
 :root[data-color-scheme="dark"] .secondary-button { color: var(--green); }
-:root[data-color-scheme="dark"] .copy-tabs button,
-:root[data-color-scheme="dark"] .workflow-tabs button,
-:root[data-color-scheme="dark"] .mode-switch button { color: var(--muted); }
+:root[data-color-scheme="dark"] .mode-card { background: var(--surface-tint); }
+:root[data-color-scheme="dark"] .copy-tabs button { color: var(--green); }
+:root[data-color-scheme="dark"] .workflow-tabs button { color: var(--muted); }
 :root[data-color-scheme="dark"] thead th { background: var(--surface); }
 :root[data-color-scheme="dark"] th, :root[data-color-scheme="dark"] td { border-color: #2c3934; }
 :root[data-color-scheme="dark"] .group-row th { background: #2a4035; color: #b8e6cd; }
@@ -206,10 +215,8 @@ tbody tr:not(.group-row):hover { background: var(--surface-tint); }
 :root[data-color-scheme="dark"] .status-pill { background: #2a4035; color: #b8e6cd; }
 :root[data-color-scheme="dark"] .status-pill.warning { background: #493c24; color: #f1d28e; }
 :root[data-color-scheme="dark"] .empty-table .table-scroll { background: #18211e; }
-:root[data-color-scheme="dark"] .paste-actions details .import-button { background: var(--surface); color: var(--green); border-color: var(--line); }
 :root[data-color-scheme="dark"] .copy-tabs button:hover,
 :root[data-color-scheme="dark"] .secondary-button:hover:not(:disabled),
-:root[data-color-scheme="dark"] .mode-switch button:hover:not(:disabled),
 :root[data-color-scheme="dark"] .workflow-tabs button:hover { background: #304239; }
 
 @media (max-width: 600px) {
@@ -219,6 +226,8 @@ tbody tr:not(.group-row):hover { background: var(--surface-tint); }
   .panel { padding: 16px; }
   .settings-row { align-items: stretch; }
   .paste-grid { grid-template-columns: 1fr; }
+  .rank-paste-grid { grid-template-columns: 1fr; }
+  .mode-cards { grid-template-columns: 1fr; }
   .candidate-columns { grid-template-columns: 1fr; }
   .candidate-columns .defense-table-section h3 { min-height: 0; }
   .workflow-tabs { gap: 3px; }
