@@ -31,66 +31,74 @@
     return battles >= 5000 ? "high" : battles >= 2000 ? "moderate" : "limited";
   }
 
-  function makeG1Evidence(rankData, rankTablesProvided) {
-    const direct = rankData && rankData.G1;
-    if (direct) {
-      const wins = winsFromRoundedRate(direct);
-      const representativeWins = Math.round(direct.winRate * direct.battles / 100);
-      const interval = wilsonInterval(representativeWins, direct.battles);
-      const conservative = wilsonInterval(wins.minimum, direct.battles).lower;
-      return {
-        status: "measured",
-        battles: direct.battles,
-        winRate: direct.winRate,
-        roundingRange: {
-          lower: wins.minimum * 100 / direct.battles,
-          upper: wins.maximum * 100 / direct.battles
-        },
-        wilson95: { lower: interval.lower * 100, upper: interval.upper * 100 },
-        conservativeRate: conservative * 100,
-        scoreBps: Math.floor(conservative * 10000),
-        confidence: confidenceTier(direct.battles)
-      };
-    }
-
-    const all = rankData && rankData.ALL;
-    const g2 = rankData && rankData.G2;
-    const g3 = rankData && rankData.G3;
-    if (!all || !g2 || !g3 ||
-        !["G1", "G2", "G3", "ALL"].every(rank => rankTablesProvided && rankTablesProvided.includes(rank))) {
-      return { status: "unknown", reason: "G1 performance cannot be uniquely reconstructed from the imported rank tables." };
-    }
-
-    const battles = all.battles - g2.battles - g3.battles;
-    if (battles <= 0) {
-      return { status: "unknown", reason: "No positive residual G1 sample can be established." };
-    }
-
-    const allWins = winsFromRoundedRate(all);
-    const g2Wins = winsFromRoundedRate(g2);
-    const g3Wins = winsFromRoundedRate(g3);
-    const minimumWins = Math.max(0, allWins.minimum - g2Wins.maximum - g3Wins.maximum);
-    const maximumWins = Math.min(battles, allWins.maximum - g2Wins.minimum - g3Wins.minimum);
-    if (minimumWins > maximumWins) {
-      return { status: "unknown", reason: "Rounded rank percentages do not support a consistent residual G1 estimate." };
-    }
-
-    const estimateWins = all.battles * all.winRate / 100 -
-      g2.battles * g2.winRate / 100 - g3.battles * g3.winRate / 100;
-    const estimate = Math.max(0, Math.min(battles, estimateWins)) * 100 / battles;
-    const conservative = wilsonInterval(minimumWins, battles).lower;
+  function evidenceForSample(sample, rank, status) {
+    const wins = winsFromRoundedRate(sample);
+    const representativeWins = Math.round(sample.winRate * sample.battles / 100);
+    const interval = wilsonInterval(representativeWins, sample.battles);
+    const conservative = wilsonInterval(wins.minimum, sample.battles).lower;
     return {
-      status: "inferred",
-      battles,
-      winRate: estimate,
+      rank,
+      status,
+      battles: sample.battles,
+      winRate: sample.winRate,
       roundingRange: {
-        lower: minimumWins * 100 / battles,
-        upper: maximumWins * 100 / battles
+        lower: wins.minimum * 100 / sample.battles,
+        upper: wins.maximum * 100 / sample.battles
       },
+      wilson95: { lower: interval.lower * 100, upper: interval.upper * 100 },
       conservativeRate: conservative * 100,
       scoreBps: Math.floor(conservative * 10000),
-      confidence: confidenceTier(battles)
+      confidence: confidenceTier(sample.battles)
     };
+  }
+
+  function inferRankEvidence(rankData, target, rankTablesProvided) {
+    const otherRanks = target === "G1" ? ["G2", "G3"] :
+      target === "G2" ? ["G1", "G3"] : null;
+    const requiredTables = ["G1", "G2", "G3", "ALL"];
+    if (!otherRanks || !rankData.ALL || !rankData[otherRanks[0]] || !rankData[otherRanks[1]] ||
+        !requiredTables.every(rank => rankTablesProvided.includes(rank))) return null;
+    const [first, second] = otherRanks.map(rank => rankData[rank]);
+    const battles = rankData.ALL.battles - first.battles - second.battles;
+    if (battles <= 0) return null;
+    const allWins = winsFromRoundedRate(rankData.ALL);
+    const firstWins = winsFromRoundedRate(first);
+    const secondWins = winsFromRoundedRate(second);
+    const minimumWins = Math.max(0, allWins.minimum - firstWins.maximum - secondWins.maximum);
+    const maximumWins = Math.min(battles, allWins.maximum - firstWins.minimum - secondWins.minimum);
+    if (minimumWins > maximumWins) return null;
+    const estimateWins = rankData.ALL.battles * rankData.ALL.winRate / 100 -
+      first.battles * first.winRate / 100 - second.battles * second.winRate / 100;
+    const estimate = Math.max(0, Math.min(battles, estimateWins)) * 100 / battles;
+    const evidence = evidenceForSample({
+      battles,
+      winRate: estimate,
+      precision: Math.min(rankData.ALL.precision, first.precision, second.precision)
+    }, target, "inferred");
+    evidence.roundingRange = {
+      lower: minimumWins * 100 / battles,
+      upper: maximumWins * 100 / battles
+    };
+    evidence.conservativeRate = wilsonInterval(minimumWins, battles).lower * 100;
+    evidence.scoreBps = Math.floor(evidence.conservativeRate * 100);
+    return evidence;
+  }
+
+  function makeG1Evidence(rankData, rankTablesProvided) {
+    if (rankData.G1) return evidenceForSample(rankData.G1, "G1", "measured");
+    return inferRankEvidence(rankData, "G1", rankTablesProvided) ||
+      { rank: "G1", status: "unknown", reason: "G1 performance cannot be uniquely reconstructed from the imported rank tables." };
+  }
+
+  function makePortfolioEvidence(rankData, rankTablesProvided) {
+    if (rankData.G1) return evidenceForSample(rankData.G1, "G1", "measured");
+    const inferredG1 = inferRankEvidence(rankData, "G1", rankTablesProvided);
+    if (inferredG1) return inferredG1;
+    if (rankData.G2) return evidenceForSample(rankData.G2, "G2", "measured");
+    const inferredG2 = inferRankEvidence(rankData, "G2", rankTablesProvided);
+    if (inferredG2) return inferredG2;
+    if (rankData.G3) return evidenceForSample(rankData.G3, "G3", "measured");
+    return { rank: null, status: "unknown", reason: "No eligible G1, G2, or G3 evidence is available." };
   }
 
   function validateDataset(input) {
@@ -185,11 +193,17 @@
         }
         normalizedTeam.rankTablesProvided = teamRankTables.slice();
         normalizedTeam.g1Evidence = makeG1Evidence(normalizedTeam.rankData, teamRankTables);
+        normalizedTeam.g2Evidence = normalizedTeam.rankData.G2
+          ? evidenceForSample(normalizedTeam.rankData.G2, "G2", "measured")
+          : inferRankEvidence(normalizedTeam.rankData, "G2", teamRankTables);
+        normalizedTeam.portfolioEvidence = makePortfolioEvidence(normalizedTeam.rankData, teamRankTables);
       }
       if (input.rankAware === true && !normalizedTeam.g1Evidence) {
         normalizedTeam.rankData = {};
         normalizedTeam.rankTablesProvided = input.rankTablesProvided.slice();
         normalizedTeam.g1Evidence = makeG1Evidence(normalizedTeam.rankData, normalizedTeam.rankTablesProvided);
+        normalizedTeam.g2Evidence = undefined;
+        normalizedTeam.portfolioEvidence = makePortfolioEvidence(normalizedTeam.rankData, normalizedTeam.rankTablesProvided);
       }
       if (team.siegeCategory === "fourStar" || team.siegeCategory === "natFive") {
         normalizedTeam.siegeCategory = team.siegeCategory;
@@ -202,7 +216,7 @@
     if (input.mode === "siege") {
       for (const id of fourStarRoster) monsters.get(id).rosterGroup = "fourStar";
     }
-    return {
+    const result = {
       title: typeof input.title === "string" ? input.title : "Imported candidate data",
       snapshot: typeof input.snapshot === "string" ? input.snapshot : "Snapshot not specified",
       mode: input.mode === "siege" || input.mode === "wgb" ? input.mode : null,
@@ -212,6 +226,50 @@
       monsters: Array.from(monsters.values()),
       teams
     };
+    if (input.sourceTables !== undefined || input.sourceTablesProvided !== undefined) {
+      if (input.mode !== "siege" || !input.sourceTables || !input.sourceTablesProvided ||
+          typeof input.sourceTables !== "object" || typeof input.sourceTablesProvided !== "object") {
+        throw new Error("Complete source tables are supported only for Siege rank-aware datasets.");
+      }
+      const sourceTables = {};
+      const sourceTablesProvided = {};
+      for (const category of ["fourStar", "all"]) {
+        if (!input.sourceTables[category] || !input.sourceTablesProvided[category] ||
+            !Array.isArray(input.sourceTablesProvided[category]) ||
+            input.sourceTablesProvided[category].some(rank => !RANKS.includes(rank)) ||
+            new Set(input.sourceTablesProvided[category]).size !== input.sourceTablesProvided[category].length) {
+          throw new Error("Complete Siege source tables must identify unique supplied ranks for each category.");
+        }
+        sourceTables[category] = {};
+        sourceTablesProvided[category] = input.sourceTablesProvided[category].slice();
+        for (const rank of RANKS) {
+          const rows = input.sourceTables[category][rank];
+          if (!Array.isArray(rows)) throw new Error("Complete Siege source tables need an array for each rank.");
+          sourceTables[category][rank] = rows.map(row => {
+            const names = row && row.names;
+            const battles = Number(row && row.battles);
+            const winRate = Number(row && row.winRate);
+            const precision = row && row.precision;
+            if (!Array.isArray(names) || names.length !== 3 ||
+                names.some(name => typeof name !== "string" || !name.trim() || /[\t\r\n]/.test(name)) ||
+                new Set(names.map(name => name.toLocaleLowerCase())).size !== 3 ||
+                !Number.isSafeInteger(battles) || battles < 1 ||
+                !Number.isFinite(winRate) || winRate < 0 || winRate > 100 ||
+                !Number.isInteger(precision) || precision < 0 || precision > 4) {
+              throw new Error("Each complete source-table row needs three names, valid battles, winRate, and precision.");
+            }
+            return { names: names.slice(), battles, winRate, precision };
+          });
+          if (sourceTables[category][rank].length &&
+              !sourceTablesProvided[category].includes(rank)) {
+            throw new Error("Source-table rows cannot exist for an undeclared input table.");
+          }
+        }
+      }
+      result.sourceTables = sourceTables;
+      result.sourceTablesProvided = sourceTablesProvided;
+    }
+    return result;
   }
 
   function cleanMonsterLabel(value) {
@@ -328,9 +386,11 @@
       const teamsByKey = new Map();
       const counts = {};
       const rankTablesProvided = [];
+      const sourceTables = {};
       let cleanedLabels = 0;
       for (const rank of RANKS) {
         const text = String(tables && tables[rank] || "").trim();
+        sourceTables[rank] = [];
         if (!text) continue;
         const parsed = parsePasteTable(text, label + " " + rank + " table");
         rankTablesProvided.push(rank);
@@ -338,6 +398,12 @@
         cleanedLabels += parsed.cleanedLabels;
         const seen = new Set();
         for (const team of parsed.teams) {
+          sourceTables[rank].push({
+            names: team.names.slice(),
+            battles: team.battles,
+            winRate: team.winRate,
+            precision: team.precision
+          });
           const key = pasteTeamKey(team.names);
           if (seen.has(key)) {
             throw new Error(label + " " + rank + " table contains the same team more than once: " + team.names.join(" / "));
@@ -355,7 +421,7 @@
           };
         }
       }
-      return { teamsByKey, counts, rankTablesProvided, cleanedLabels };
+      return { teamsByKey, counts, rankTablesProvided, sourceTables, cleanedLabels };
     };
     const snapshot = String(options.snapshot || "").trim() || "Rank-scoped " +
       (mode === "siege" ? "Siege" : "World Guild Battle") + " paste";
@@ -387,7 +453,12 @@
       rankTablesProvided: Array.from(new Set([
         ...fourStar.rankTablesProvided,
         ...all.rankTablesProvided
-      ]))
+      ])),
+      sourceTables: { fourStar: fourStar.sourceTables, all: all.sourceTables },
+      sourceTablesProvided: {
+        fourStar: fourStar.rankTablesProvided,
+        all: all.rankTablesProvided
+      }
     });
     return {
       dataset,
@@ -429,8 +500,84 @@
       rankAware: true,
       rankTablesProvided: options.rankTablesProvided,
       monsters: Array.from(monsters.values()),
-      teams
+      teams,
+      sourceTables: options.sourceTables,
+      sourceTablesProvided: options.sourceTablesProvided
     });
+  }
+
+  function datasetFromCompleteJson(input) {
+    if (!input || input.format !== "guild-defense-complete-siege-v1" || input.mode !== "siege" ||
+        !input.fourStarTables || !input.allTables) {
+      throw new Error("Expected a complete Siege JSON file with fourStarTables and allTables.");
+    }
+    const toPasteTables = (tables, label) => {
+      if (!tables || typeof tables !== "object" || Array.isArray(tables) ||
+          Object.keys(tables).some(rank => !RANKS.includes(rank))) {
+        throw new Error(label + " must contain G1, G2, G3, and ALL arrays.");
+      }
+      return Object.fromEntries(RANKS.map(rank => {
+        const rows = tables[rank] ?? [];
+        if (!Array.isArray(rows)) throw new Error(label + " " + rank + " must be an array.");
+        if (!rows.length) return [rank, ""];
+        const records = rows.map((row, index) => {
+          const names = row && row.names;
+          const battles = Number(row && row.battles);
+          const winRate = Number(row && row.winRate);
+          const precision = row && row.precision;
+          if (!Array.isArray(names) || names.length !== 3 ||
+              names.some(name => typeof name !== "string" || !name.trim() || /[\t\r\n]/.test(name)) ||
+              !Number.isSafeInteger(battles) || battles < 1 ||
+              !Number.isFinite(winRate) || winRate < 0 || winRate > 100 ||
+              !Number.isInteger(precision) || precision < 0 || precision > 4) {
+            throw new Error(label + " " + rank + ", row " + (index + 1) + " is invalid.");
+          }
+          return [...names, String(battles), winRate.toFixed(precision)].join("\t");
+        });
+        return [rank, [
+          "Monster Leader\tMonster 2\tMonster 3\tBattles\tWR%",
+          ...records
+        ].join("\n")];
+      }));
+    };
+    return datasetFromRankPastedTables({
+      mode: "siege",
+      snapshot: input.snapshot,
+      fourStarTables: toPasteTables(input.fourStarTables, "4-star tables"),
+      allTables: toPasteTables(input.allTables, "All-defenses tables")
+    });
+  }
+
+  function completeSiegeJson(datasetInput) {
+    const dataset = validateDataset(datasetInput);
+    if (dataset.mode !== "siege" || !dataset.rankAware) {
+      throw new Error("Complete JSON export requires imported rank-aware Siege data.");
+    }
+    const sourceTables = dataset.sourceTables || { fourStar: {}, all: {} };
+    const outputTables = category => Object.fromEntries(RANKS.map(rank => {
+      const rows = sourceTables[category] && sourceTables[category][rank];
+      if (rows) return [rank, rows.map(row => ({ ...row, names: row.names.slice() }))];
+      const derived = [];
+      for (const team of dataset.teams) {
+        if ((category === "fourStar" && team.siegeCategory !== "fourStar") ||
+            (category === "all" && team.siegeCategory !== "natFive")) continue;
+        const sample = team.rankData && team.rankData[rank];
+        if (sample) derived.push({
+          names: [team.leader, ...team.memberIds],
+          battles: sample.battles,
+          winRate: sample.winRate,
+          precision: sample.precision
+        });
+      }
+      return [rank, derived];
+    }));
+    return {
+      format: "guild-defense-complete-siege-v1",
+      mode: "siege",
+      snapshot: dataset.snapshot,
+      fourStarTables: outputTables("fourStar"),
+      allTables: outputTables("all")
+    };
   }
 
   function pasteTeamKey(names) {
@@ -511,7 +658,7 @@
   }
 
   function objectiveBps(dataset, team) {
-    return dataset.rankAware ? team.g1Evidence && team.g1Evidence.scoreBps : team.winRateBps;
+    return dataset.rankAware ? team.portfolioEvidence && team.portfolioEvidence.scoreBps : team.winRateBps;
   }
 
   function solve(datasetInput, rosterInput, mode, budget, options) {
@@ -682,7 +829,7 @@
       Number.isInteger(objectiveBps(dataset, team)))) {
       return {
         status: "infeasible",
-        reason: "No defense has measured or uniquely reconstructible G1 evidence.",
+        reason: "No defense has eligible G1, G2, or G3 evidence.",
         teams: [],
         groups: [],
         totalWinRateBps: 0,
@@ -792,6 +939,8 @@
     parsePasteTable,
     datasetFromPastedTables,
     datasetFromRankPastedTables,
+    datasetFromCompleteJson,
+    completeSiegeJson,
     wilsonInterval,
     makeG1Evidence,
     solve,

@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { solve, solveClosest, suggestFillTeams, validateDataset, parsePasteTable, datasetFromPastedTables,
-  datasetFromRankPastedTables, wilsonInterval } = require("../optimizer.js");
+  datasetFromRankPastedTables, datasetFromCompleteJson, completeSiegeJson, wilsonInterval } = require("../optimizer.js");
 
 const data = {
   title: "test",
@@ -102,8 +102,9 @@ test("imports rank-scoped tables and reconstructs only uniquely attributable G1 
   const noEvidence = solveClosest(withoutG1Table.dataset, roster, "siege", 0, {
     requirements: { fourStar: 1, natFive: 0 }
   });
-  assert.equal(noEvidence.status, "infeasible");
-  assert.match(noEvidence.reason, /no defense has measured or uniquely reconstructible G1 evidence/i);
+  assert.equal(withoutG1Table.dataset.teams[0].portfolioEvidence.rank, "G2");
+  assert.equal(withoutG1Table.dataset.teams[0].portfolioEvidence.status, "measured");
+  assert.equal(noEvidence.status, "optimal");
 });
 
 test("subtracts known 4-star defenses across all eight Siege tables", () => {
@@ -141,6 +142,58 @@ test("subtracts known 4-star defenses across all eight Siege tables", () => {
   assert.equal(remainder[0].rankData.ALL.battles, 4800);
   assert.equal(imported.fourStarCount, 2);
   assert.equal(imported.natFiveCount, 1);
+  const exported = completeSiegeJson(imported.dataset);
+  assert.equal(exported.fourStarTables.G1.length, 1);
+  assert.equal(exported.allTables.G1.length, 2);
+  const reimported = datasetFromCompleteJson(exported);
+  assert.equal(reimported.dataset.teams.length, imported.dataset.teams.length);
+  assert.equal(reimported.dataset.teams.filter(team => team.siegeCategory === "fourStar").length, 2);
+  assert.equal(reimported.dataset.teams.filter(team => team.siegeCategory === "natFive").length, 1);
+  assert.equal(reimported.dataset.sourceTables.all.G1.length, 2);
+  const restored = validateDataset(JSON.parse(JSON.stringify(imported.dataset)));
+  assert.equal(completeSiegeJson(restored).allTables.G1.length, 2);
+});
+
+test("applies evidence priority and calculates conservative inferred G2 context", () => {
+  const fixture = validateDataset({
+    mode: "siege",
+    rankAware: true,
+    rankTablesProvided: ["G1", "G2", "G3", "ALL"],
+    monsters: Array.from({ length: 15 }, (_, index) => ({
+      id: "m" + index, name: "Monster " + index, naturalStars: 0
+    })),
+    teams: [
+      { leader: "m0", members: ["m1", "m2"], winRate: 15, battles: 1000,
+        rankData: { G1: { winRate: 15, battles: 1000 }, G2: { winRate: 90, battles: 1000 } } },
+      { leader: "m3", members: ["m4", "m5"], winRate: 30, battles: 1000,
+        rankData: {
+          ALL: { winRate: 30, battles: 3000 }, G2: { winRate: 20, battles: 1000 },
+          G3: { winRate: 10, battles: 1000 }
+        } },
+      { leader: "m6", members: ["m7", "m8"], winRate: 25, battles: 1000,
+        rankData: { G2: { winRate: 25, battles: 1000 }, G3: { winRate: 15, battles: 1000 } } },
+      { leader: "m9", members: ["m10", "m11"], winRate: 25, battles: 1000,
+        rankData: {
+          ALL: { winRate: 25, battles: 3000 }, G1: { winRate: 20, battles: 1000 },
+          G3: { winRate: 15, battles: 1000 }
+        } },
+      { leader: "m12", members: ["m13", "m14"], winRate: 10, battles: 1000,
+        rankData: { G3: { winRate: 10, battles: 1000 } } }
+    ]
+  });
+  assert.deepEqual(fixture.teams.map(team => [
+    team.portfolioEvidence.rank, team.portfolioEvidence.status
+  ]), [
+    ["G1", "measured"],
+    ["G1", "inferred"],
+    ["G2", "measured"],
+    ["G1", "measured"],
+    ["G3", "measured"]
+  ]);
+  assert.equal(fixture.teams[0].portfolioEvidence.winRate, 15);
+  assert.equal(fixture.teams[3].g2Evidence.status, "inferred");
+  assert.ok(fixture.teams[3].g2Evidence.conservativeRate <=
+    fixture.teams[3].g2Evidence.roundingRange.lower);
 });
 
 test("imports rank-aware WGB as one category without rarity splits", () => {

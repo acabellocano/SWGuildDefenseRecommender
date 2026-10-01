@@ -88,8 +88,8 @@
       return section;
     }
     if (state.dataset.rankAware && !state.dataset.teams.some(team =>
-      Number.isInteger(team.g1Evidence && team.g1Evidence.scoreBps))) {
-      section.append(makeCell("p", "No defense has measured or uniquely reconstructible G1 evidence. Import the matching G1, G2, G3, and ALL tables, or add direct G1 samples. Candidates with unknown G1 performance are not assigned an ALL-rank substitute.", "result-summary"));
+      Number.isInteger(team.portfolioEvidence && team.portfolioEvidence.scoreBps))) {
+      section.append(makeCell("p", "No defense has eligible G1, G2, or G3 evidence. ALL-rank data remains visible for discovery but is not used as a ranked substitute.", "result-summary"));
       return section;
     }
     if (missing.length) {
@@ -147,34 +147,38 @@
   }
 
   function rankEvidenceText(team) {
-    const evidence = team.g1Evidence;
-    if (!evidence) return "—";
-    const parts = evidence.status === "unknown"
-      ? ["G1 unknown"]
-      : ["G1 " + confidenceText(evidence.winRate) + " / " +
-        evidence.battles.toLocaleString() + " (" + evidence.status + ")"];
-    if (evidence.status === "measured" && evidence.wilson95) {
-      parts.push("95% Wilson " + confidenceText(evidence.wilson95.lower) +
-        "–" + confidenceText(evidence.wilson95.upper));
-      parts.push("conservative score " + confidenceText(evidence.conservativeRate));
-    } else if (evidence.status === "inferred") {
-      parts.push("rounding range " + confidenceText(evidence.roundingRange.lower) +
-        "–" + confidenceText(evidence.roundingRange.upper));
-      parts.push("conservative score " + confidenceText(evidence.conservativeRate));
-    }
-    if (evidence.confidence) parts.push("sample support " + evidence.confidence);
-    for (const rank of ["G2", "G3", "ALL"]) {
+    const g1 = team.g1Evidence;
+    const selected = team.portfolioEvidence;
+    const parts = [];
+    if (selected && selected.scoreBps !== undefined) {
+      parts.push("Selected " + selected.rank + " " + selected.status + " " +
+        confidenceText(selected.winRate) + " / " + selected.battles.toLocaleString() +
+        " (score " + confidenceText(selected.conservativeRate) + ")");
+      if (selected.status === "inferred") {
+        parts.push("rounding range " + confidenceText(selected.roundingRange.lower) +
+          "–" + confidenceText(selected.roundingRange.upper));
+      } else if (selected.wilson95) {
+        parts.push("95% Wilson " + confidenceText(selected.wilson95.lower) +
+          "–" + confidenceText(selected.wilson95.upper));
+      }
+    } else parts.push("No eligible G1/G2/G3 sample");
+    if (g1 && g1.status === "unknown") parts.push("G1 unknown");
+    for (const rank of ["G1", "G2", "G3", "ALL"]) {
       const sample = team.rankData && team.rankData[rank];
       if (sample) parts.push(rank + " " + confidenceText(sample.winRate) +
         " / " + sample.battles.toLocaleString());
+      else if (rank === "G2" && team.g2Evidence && team.g2Evidence.status === "inferred") {
+        parts.push("G2 inferred " + confidenceText(team.g2Evidence.winRate) +
+          " / " + team.g2Evidence.battles.toLocaleString());
+      }
     }
     const g2 = team.rankData && team.rankData.G2;
     const g3 = team.rankData && team.rankData.G3;
-    if (evidence.status !== "unknown" && g2) {
-      parts.push("G1→G2 " + (g2.winRate - evidence.winRate).toFixed(2) + " pp (descriptive)");
+    if (g1.status !== "unknown" && g2) {
+      parts.push("G1→G2 " + (g2.winRate - g1.winRate).toFixed(2) + " pp (descriptive)");
     }
-    if (evidence.status !== "unknown" && g3) {
-      parts.push("G1→G3 " + (g3.winRate - evidence.winRate).toFixed(2) + " pp (descriptive)");
+    if (g1.status !== "unknown" && g3) {
+      parts.push("G1→G3 " + (g3.winRate - g1.winRate).toFixed(2) + " pp (descriptive)");
     }
     if (g2 && g3) parts.push("G2→G3 " + (g3.winRate - g2.winRate).toFixed(2) + " pp (descriptive)");
     return parts.join(" · ");
@@ -227,7 +231,7 @@
         const stats = appearances.get(id);
         stats.count++;
         const rate = state.dataset.rankAware
-          ? team.g1Evidence && team.g1Evidence.winRate
+          ? team.portfolioEvidence && team.portfolioEvidence.winRate
           : team.winRateBps / 100;
         if (Number.isFinite(rate)) {
           stats.winRateTotal += rate;
@@ -314,10 +318,9 @@
         makeCell("td", monster.stats.ratedCount ? average.toFixed(2) + "%" : "—"));
       body.append(tr);
     }
-    $("#roster thead").replaceChildren();
     const header = document.createElement("tr");
     for (const label of ["Available", ...(state.mode === "siege" ? ["Copies"] : []),
-      "Monster", "Defences", state.dataset.rankAware ? "Avg. G1 WR" : "Avg. WR"])
+      "Monster", "Defences", state.dataset.rankAware ? "Avg. priority WR" : "Avg. WR"])
       header.append(makeCell("th", label));
     $("#roster").closest("table").querySelector("thead").replaceChildren(header);
     filterMonsterList();
@@ -340,7 +343,7 @@
     $("#legacy-wgb-import").hidden = state.mode !== "wgb";
     $("#optimize").disabled = !state.dataset;
     $("#mode-description").textContent = state.dataset && state.dataset.rankAware
-      ? "Rank-aware mode selects only defenses with measured or uniquely reconstructed G1 evidence, using a conservative Wilson-based score. Unrecoverable G1 evidence remains visible for discovery but is excluded from the portfolio."
+      ? "Rank evidence is prioritized as measured G1, inferred G1, measured G2, inferred G2, then measured G3. Each selection uses a conservative Wilson-based score."
       : state.mode === "siege"
         ? "Choose up to ten defenses across the 4-star and all-defenses remainder categories."
         : "Builds five defenses from the World Guild Battle list, without a rarity split.";
@@ -364,6 +367,8 @@
     $("#duplicate-team-option").hidden = !state.dataset || state.mode !== "siege";
     $("#allow-duplicate-teams").checked = state.allowDuplicateTeams;
     $("#availability-panel").hidden = !state.dataset;
+    $("#export-complete-json").hidden = state.mode !== "siege";
+    $("#export-complete-json").disabled = !state.datasets.siege || !state.datasets.siege.rankAware;
     $("#roster-copy-hint").hidden = state.mode !== "siege";
     renderCandidateTables();
     renderRoster();
@@ -379,10 +384,10 @@
     $("#candidate-summary").textContent =
       (siege ? fourStar.length + " Siege 4-star + " + natFive.length + " all-defenses remainder" :
         wgb ? wgbTeams.length + " World Guild Battle defenses" : state.mode + " data not imported") +
-      (siege && siege.rankAware ? " · G1-evaluable: " +
-        siege.teams.filter(team => team.g1Evidence && team.g1Evidence.scoreBps !== undefined).length +
-        " · inferred: " + siege.teams.filter(team => team.g1Evidence && team.g1Evidence.status === "inferred").length +
-        " · unknown G1 excluded from ranked portfolios" : "") +
+      (siege && siege.rankAware ? " · rank-evaluable: " +
+        siege.teams.filter(team => team.portfolioEvidence && team.portfolioEvidence.scoreBps !== undefined).length +
+        " · inferred priority rank: " + siege.teams.filter(team =>
+          team.portfolioEvidence && team.portfolioEvidence.status === "inferred").length : "") +
       (state.cleanedLabels ? " · " + state.cleanedLabels + " doubled labels cleaned." : ".");
     $("#four-star-table-section").hidden = state.mode !== "siege";
     $("#nat-five-table-section").hidden = state.mode !== "siege";
@@ -390,17 +395,21 @@
     $("#four-star-table-section").classList.toggle("empty-table", !siege);
     $("#nat-five-table-section").classList.toggle("empty-table", !siege);
     $("#wgb-table-section").classList.toggle("empty-table", !wgb);
-    renderDefenseTable("#four-star-teams", fourStar, siege);
-    renderDefenseTable("#nat-five-teams", natFive, siege);
-    renderDefenseTable("#wgb-teams", wgbTeams, wgb);
+    if (state.mode === "siege") {
+      renderDefenseTable("#four-star-teams", fourStar, siege);
+      renderDefenseTable("#nat-five-teams", natFive, siege);
+    } else renderDefenseTable("#wgb-teams", wgbTeams, wgb);
   }
 
   function renderDefenseTable(selector, teams, dataset) {
     const body = $(selector);
+    if (!body) throw new Error("The " + selector + " defense table is missing from the page. Reload the app and try again.");
     body.replaceChildren();
     const table = body.closest("table");
+    const header = table && table.querySelector("thead tr");
+    if (!header) throw new Error("The " + selector + " defense table header is missing from the page. Reload the app and try again.");
     if (!dataset) {
-      table.querySelector("thead tr").replaceChildren(
+      header.replaceChildren(
         ...["Leader", "Monster 2", "Monster 3", "Battles", "WR%"].map(label => makeCell("th", label))
       );
       const row = document.createElement("tr");
@@ -410,7 +419,6 @@
       body.append(row);
       return;
     }
-    const header = table.querySelector("thead tr");
     const labels = ["Leader", "Monster 2", "Monster 3",
       dataset.rankAware ? "Source sample" : "Battles",
       dataset.rankAware ? "Source WR" : "WR%"];
@@ -433,7 +441,7 @@
       return;
     }
     const sortedTeams = teams.slice().sort((a, b) =>
-      (dataset.rankAware ? (b.g1Evidence?.scoreBps ?? -1) - (a.g1Evidence?.scoreBps ?? -1) :
+      (dataset.rankAware ? (b.portfolioEvidence?.scoreBps ?? -1) - (a.portfolioEvidence?.scoreBps ?? -1) :
         b.winRateBps - a.winRateBps) ||
       b.battles - a.battles || a.id.localeCompare(b.id));
     for (const team of sortedTeams) {
@@ -442,12 +450,17 @@
         dataset.monsters.find(monster => monster.id === id).name);
       for (const name of names) row.append(makeCell("td", name));
       const sourceRank = dataset.rankAware
-        ? ["ALL", "G1", "G2", "G3"].find(rank => team.rankData && team.rankData[rank])
+        ? team.portfolioEvidence?.rank ||
+          ["G1", "G2", "G3", "ALL"].find(rank => team.rankData && team.rankData[rank])
         : null;
+      const displayedRate = dataset.rankAware && team.portfolioEvidence &&
+        team.portfolioEvidence.scoreBps !== undefined
+        ? team.portfolioEvidence.winRate : team.winRateBps / 100;
       row.append(makeCell("td", dataset.rankAware
-        ? (sourceRank || "—") + " · " + team.battles.toLocaleString()
+        ? (sourceRank || "—") + " · " +
+          (team.portfolioEvidence?.battles || team.battles).toLocaleString()
         : team.battles.toLocaleString()));
-      row.append(makeCell("td", (team.winRateBps / 100).toFixed(2) + "%"));
+      row.append(makeCell("td", Number.isFinite(displayedRate) ? displayedRate.toFixed(2) + "%" : "—"));
       if (dataset.rankAware) row.append(makeCell("td", rankEvidenceText(team), "rank-evidence-cell"));
       body.append(row);
     }
@@ -493,7 +506,7 @@
 
     const stats = document.createElement("div");
     stats.className = "result-stats";
-    stats.append(stat(state.dataset.rankAware ? "Average conservative G1 score" : "Average win rate",
+    stats.append(stat(state.dataset.rankAware ? "Average conservative priority-rank score" : "Average win rate",
       result.averageWinRate.toFixed(2) + "%"));
     stats.append(stat("Defences selected", String(result.teams.length)));
     stats.append(stat("Monsters excluded", String(state.dataset.monsters.length -
@@ -611,8 +624,8 @@
       const partial = result.requested &&
         result.teams.length < result.requested.fourStar + result.requested.natFive;
       showNotice(result.status === "infeasible" ? state.dataset.rankAware &&
-        !state.dataset.teams.some(team => Number.isInteger(team.g1Evidence && team.g1Evidence.scoreBps))
-        ? "No candidate has eligible G1 evidence. Check the imported rank tables and snapshot."
+        !state.dataset.teams.some(team => Number.isInteger(team.portfolioEvidence && team.portfolioEvidence.scoreBps))
+        ? "No candidate has eligible G1, G2, or G3 evidence. Check the imported rank tables and snapshot."
         : "No defense can be built with the current copy counts." :
         result.status === "timed_out" ? "A feasible portfolio was found, but optimality was not proven." :
           partial ? "Closest available defense mix found. See the missing categories and fill suggestions below." :
@@ -630,12 +643,16 @@
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      const dataset = GuildDefenseOptimizer.validateDataset(parsed);
+      const completeImport = parsed && parsed.format === "guild-defense-complete-siege-v1";
+      const imported = completeImport
+        ? GuildDefenseOptimizer.datasetFromCompleteJson(parsed)
+        : { dataset: GuildDefenseOptimizer.validateDataset(parsed), cleanedLabels: 0 };
+      const dataset = imported.dataset;
       const mode = dataset.mode || state.mode;
       dataset.mode = mode;
       state.datasets[mode] = dataset;
       selectMode(mode);
-      state.cleanedLabels = 0;
+      state.cleanedLabels = imported.cleanedLabels || 0;
       if (dataset.rankAware && mode === "siege") {
         state.requestedFour = 10;
         state.requestedNatFive = 0;
@@ -643,11 +660,33 @@
       $("#results").replaceChildren();
       state.activeStep = "data";
       render();
+      $("#json-import-result").textContent = completeImport
+        ? "Imported complete Siege data: " + dataset.teams.length + " defenses." : "";
       showNotice("Imported " + dataset.teams.length + " defences. All listed monsters start marked available.", false);
     } catch (error) {
+      $("#json-import-result").textContent = error.message;
       showNotice("Import failed: " + error.message, true);
     } finally {
       event.target.value = "";
+    }
+  });
+  $("#export-complete-json").addEventListener("click", () => {
+    try {
+      const output = GuildDefenseOptimizer.completeSiegeJson(state.datasets.siege);
+      const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "siege-defense-data.json";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      $("#json-import-result").textContent = "Exported all rank tables for both Siege categories.";
+      showNotice("Complete Siege JSON exported.", false);
+    } catch (error) {
+      $("#json-import-result").textContent = error.message;
+      showNotice("JSON export failed: " + error.message, true);
     }
   });
   $("#import-paste").addEventListener("click", () => {
@@ -766,6 +805,7 @@
       "#wgb-g1", "#wgb-g2", "#wgb-g3", "#wgb-all"])
       $(selector).value = "";
     $("#paste-result").textContent = "";
+    $("#json-import-result").textContent = "";
     $("#rank-paste-result").textContent = "";
     $("#wgb-rank-paste-result").textContent = "";
     $("#results").replaceChildren();

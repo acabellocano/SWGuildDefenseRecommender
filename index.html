@@ -91,7 +91,7 @@
         </label>
         <div id="siege-rank-import">
           <p class="hint">Paste separate 4-star-only and all-defenses views for each rank. Teams found in any 4-star table are removed from the all-defenses remainder.</p>
-          <details class="rank-import" open>
+          <details class="rank-import">
             <summary>Siege · 4-star defenses</summary>
             <div class="rank-paste-grid">
               <label>G1<textarea id="siege-four-g1" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
@@ -100,7 +100,7 @@
               <label>ALL ranks<textarea id="siege-four-all" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
             </div>
           </details>
-          <details class="rank-import">
+          <details class="rank-import" open>
             <summary>Siege · all defenses (all rarities)</summary>
             <div class="rank-paste-grid">
               <label>G1<textarea id="siege-all-g1" rows="7" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
@@ -126,9 +126,20 @@
           <button id="import-wgb-ranked" type="button" class="primary-button">Import WGB rank tables</button>
           <p id="wgb-rank-paste-result" class="hint" role="status"></p>
         </div>
+        <details class="complete-json-import">
+          <summary>Complete JSON import/export</summary>
+          <p class="hint">Import or export one Siege JSON file containing the 4-star and all-defenses G1, G2, G3, and ALL tables.</p>
+          <div class="paste-actions">
+            <button id="export-complete-json" type="button" class="secondary-button">Export complete Siege JSON</button>
+            <label class="import-button">Choose JSON file
+              <input id="data-file" type="file" accept=".json,application/json">
+            </label>
+          </div>
+          <p id="json-import-result" class="hint" role="status"></p>
+        </details>
         <details class="legacy-import">
-          <summary>Import a legacy single-table dataset or normalized JSON</summary>
-          <p class="hint">Legacy paste data is retained for earlier exports; it has no rank-specific evidence.</p>
+          <summary>Legacy single-table paste import</summary>
+          <p class="hint">For older non-rank datasets only; rank-specific evidence is not available.</p>
           <div id="legacy-siege-import">
             <div class="paste-grid">
               <label>4-star defences<textarea id="four-star-paste" rows="5" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
@@ -139,10 +150,7 @@
             <label>WGB defenses<textarea id="wgb-paste" rows="5" spellcheck="false" placeholder="Monster Leader&#9;Monster 2&#9;Monster 3&#9;Battles&#9;WR%"></textarea></label>
           </div>
           <div class="paste-actions">
-            <button id="import-paste" class="primary-button">Import legacy table data</button>
-            <label class="import-button">Choose JSON file
-              <input id="data-file" type="file" accept=".json,application/json">
-            </label>
+            <button id="import-paste" class="primary-button">Import single-table data</button>
           </div>
           <p id="paste-result" class="hint"></p>
         </details>
