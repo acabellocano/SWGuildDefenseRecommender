@@ -12,9 +12,43 @@
     notice.className = "notice " + (isError ? "error" : "success");
   }
 
+  function initializeTheme() {
+    const select = $("#theme-select");
+    let theme = "system";
+    try {
+      const saved = localStorage.getItem("guild-defense-optimizer-theme");
+      if (["system", "light", "dark"].includes(saved)) theme = saved;
+    } catch (error) {
+      showNotice("Could not load your appearance preference: " + error.message, true);
+    }
+    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = value => {
+      document.documentElement.dataset.theme = value;
+      document.documentElement.dataset.colorScheme =
+        value === "system" ? (systemTheme.matches ? "dark" : "light") : value;
+    };
+    applyTheme(theme);
+    select.value = theme;
+    systemTheme.addEventListener("change", () => {
+      if (select.value === "system") applyTheme("system");
+    });
+    select.addEventListener("change", () => {
+      applyTheme(select.value);
+      try {
+        localStorage.setItem("guild-defense-optimizer-theme", select.value);
+      } catch (error) {
+        showNotice("Could not save your appearance preference: " + error.message, true);
+      }
+    });
+  }
+
   function makeSolverRoster(copyCap) {
     return Object.fromEntries(state.dataset.monsters.map(monster => {
       const copies = state.copies[monster.id] ?? 1;
+      if (state.mode === "wgb") {
+        const owned = copies > 0 ? 1 : 0;
+        return [monster.id, { owned, maxAdditional: 0, maxCopies: owned }];
+      }
       if (monster.rosterGroup === "fourStar" && copies > 0) {
         return [monster.id, {
           owned: copies,
@@ -176,6 +210,7 @@
       });
       available.append(checkbox);
       const copiesCell = document.createElement("td");
+      copiesCell.className = "copies-column";
       const copies = document.createElement("input");
       copies.type = "number";
       copies.min = "0";
@@ -203,14 +238,18 @@
       name.textContent = monster.name;
       const count = monster.stats.count;
       const average = count ? monster.stats.winRateTotal / count : 0;
-      tr.append(available, copiesCell, name,
+      name.dataset.monsterName = "true";
+      tr.append(available);
+      if (state.mode === "siege") tr.append(copiesCell);
+      tr.append(name,
         makeCell("td", String(count)),
         makeCell("td", count ? average.toFixed(2) + "%" : "—"));
       body.append(tr);
     }
     $("#roster thead").replaceChildren();
     const header = document.createElement("tr");
-    for (const label of ["Available", "Copies", "Monster", "Defences", "Avg. WR"]) header.append(makeCell("th", label));
+    for (const label of ["Available", ...(state.mode === "siege" ? ["Copies"] : []),
+      "Monster", "Defences", "Avg. WR"]) header.append(makeCell("th", label));
     $("#roster").closest("table").querySelector("thead").replaceChildren(header);
     filterMonsterList();
     updateAvailabilityCount();
@@ -239,9 +278,10 @@
       button.classList.toggle("selected", Number(button.dataset.copyCap) === (state.copyCap || 1));
     });
     $("#copy-tabs").hidden = !state.dataset || state.mode !== "siege";
-    $("#duplicate-team-option").hidden = !state.dataset;
+    $("#duplicate-team-option").hidden = !state.dataset || state.mode !== "siege";
     $("#allow-duplicate-teams").checked = state.allowDuplicateTeams;
     $("#availability-panel").hidden = !state.dataset;
+    $("#roster-copy-hint").hidden = state.mode !== "siege";
     renderCandidateTables();
     renderRoster();
     save();
@@ -291,7 +331,7 @@
     const term = $("#monster-search").value.trim().toLocaleLowerCase();
     for (const row of $("#roster").rows) {
       if (!row.classList.contains("group-row")) {
-        row.hidden = !row.cells[2].textContent.toLocaleLowerCase().includes(term);
+        row.hidden = !row.querySelector("[data-monster-name]").textContent.toLocaleLowerCase().includes(term);
       }
     }
   }
@@ -424,7 +464,10 @@
     showNotice("Searching defence combinations…", false);
     try {
       await new Promise(resolve => setTimeout(resolve, 0));
-      const solveOptions = { timeLimitMs: 5000, allowDuplicateTeams: state.allowDuplicateTeams };
+      const solveOptions = {
+        timeLimitMs: 5000,
+        allowDuplicateTeams: state.mode === "siege" && state.allowDuplicateTeams
+      };
       const result = state.mode === "siege"
         ? GuildDefenseOptimizer.solveClosest(state.dataset, roster, state.mode, 30, {
           ...solveOptions, requirements: { fourStar: state.requestedFour, natFive: state.requestedNatFive }
@@ -605,6 +648,7 @@
     showNotice((names.length - missing.length) + " monster(s) excluded." +
       (missing.length ? " Not found in this dataset: " + missing.join(", ") : ""), missing.length > 0);
   });
+  initializeTheme();
   initialize();
 
   function setStep(step) {

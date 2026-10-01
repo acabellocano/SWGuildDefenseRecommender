@@ -12,6 +12,8 @@ python -m http.server 8000
 
 Then open <http://localhost:8000>. The app has three steps: import tables, review cleaned tables, then optimize. Paste any combination of these copied tables with their header rows; providing all three is recommended:
 
+Choose **System**, **Light**, or **Dark** from the appearance selector in the page header. The selection is saved in this browser; System follows the device appearance preference.
+
 - **Siege · 4-star defences:** the 4-star category.
 - **Siege · all defences:** exact teams from the 4-star table are removed; the remainder forms the 5-star category. If pasted alone, its rows are treated as 5-star category candidates.
 - **World Guild Battle:** the all-defences list, with no rarity split.
