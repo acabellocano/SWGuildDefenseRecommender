@@ -128,11 +128,11 @@
         </div>
         <details class="complete-json-import">
           <summary>Complete JSON import/export</summary>
-          <p class="hint">Import or export one Siege JSON file containing the 4-star and all-defenses G1, G2, G3, and ALL tables.</p>
-          <p class="hint">Export downloads <code>siege-defense-data.json</code> to your browser’s configured download location.</p>
+          <p id="complete-json-description" class="hint">Import or export one Siege JSON file containing the 4-star and all-defenses G1, G2, G3, and ALL tables.</p>
+          <p id="complete-json-filename" class="hint">Export downloads <code>siege-defense-data.json</code> to your browser’s configured download location.</p>
           <div class="paste-actions">
-            <button id="export-complete-json" type="button" class="secondary-button">Export complete Siege JSON</button>
-            <label class="import-button">Choose JSON file
+            <button id="export-complete-json" type="button" class="secondary-button">Export complete JSON</button>
+            <label id="json-file-label" class="import-button">Choose JSON file
               <input id="data-file" type="file" accept=".json,application/json">
             </label>
           </div>
@@ -222,6 +222,19 @@
             <button type="button" data-copy-cap="4" aria-pressed="false">4 copies</button>
             <button type="button" data-copy-cap="5" aria-pressed="false">5 copies</button>
           </div>
+          <label class="minimum-battles-control">Minimum battles supporting selected evidence
+            <select id="minimum-battles-settings" data-minimum-battles>
+              <option value="0">No minimum</option>
+              <option value="25">25 battles</option>
+              <option value="50">50 battles</option>
+              <option value="100">100 battles</option>
+              <option value="250">250 battles</option>
+              <option value="500">500 battles</option>
+              <option value="1000">1,000 battles</option>
+              <option value="2500">2,500 battles</option>
+              <option value="5000">5,000 battles</option>
+            </select>
+          </label>
           <label id="duplicate-team-option" class="duplicate-team-option" hidden>
             <input id="allow-duplicate-teams" type="checkbox">
             Allow the same exact team more than once

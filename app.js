@@ -12,6 +12,16 @@
     notice.className = "notice " + (isError ? "error" : "success");
   }
 
+  function hasCandidateAtBattleThreshold() {
+    return state.dataset.teams.some(team => {
+      const battles = state.dataset.rankAware
+        ? team.portfolioEvidence && team.portfolioEvidence.battles : team.battles;
+      return Number.isInteger(battles) && battles >= state.minimumBattles &&
+        (!state.dataset.rankAware ||
+          Number.isInteger(team.portfolioEvidence && team.portfolioEvidence.scoreBps));
+    });
+  }
+
   function initializeTheme() {
     const select = $("#theme-select");
     let theme = "system";
@@ -125,6 +135,11 @@
       section.append(makeCell("p", "Select the " + diagnostic.cap + "-copy tab to see that portfolio.", "hint"));
       return section;
     }
+    if (state.minimumBattles > 0 && !hasCandidateAtBattleThreshold()) {
+      section.append(makeCell("h3", "No candidate meets the battle-count minimum"));
+      section.append(makeCell("p", "Lower the minimum battles setting or import more evidence for the selected rank.", "result-summary"));
+      return section;
+    }
     const missing = mostBlockingUnavailableMonsters();
     section.append(makeCell("h3", "What is blocking a complete portfolio?"));
     if (result.status === "timed_out") {
@@ -196,6 +211,27 @@
 
   function confidenceText(value) {
     return value.toFixed(2) + "%";
+  }
+
+  function minimumBattlesSelect(className) {
+    const label = document.createElement("label");
+    label.className = className;
+    label.append(document.createTextNode("Minimum battles supporting selected evidence "));
+    const select = document.createElement("select");
+    select.dataset.minimumBattles = "true";
+    for (const [value, text] of [
+      ["0", "No minimum"], ["25", "25"], ["50", "50"], ["100", "100"],
+      ["250", "250"], ["500", "500"], ["1000", "1,000"],
+      ["2500", "2,500"], ["5000", "5,000"]
+    ]) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value === "0" ? text : text + " battles";
+      select.append(option);
+    }
+    select.value = String(state.minimumBattles);
+    label.append(select);
+    return label;
   }
 
   function rankEvidenceText(team) {
@@ -323,14 +359,16 @@
         copiesByMode[mode] = copies;
         state = { datasets, dataset: datasets[mode], copies, copiesByMode, cleanedLabels: saved.cleanedLabels || 0,
           copyCap: [1, 2, 3, 4, 5].includes(saved.copyCap) ? saved.copyCap : 1,
+          minimumBattles: [0, 25, 50, 100, 250, 500, 1000, 2500, 5000].includes(saved.minimumBattles)
+            ? saved.minimumBattles : 0,
           allowDuplicateTeams: saved.allowDuplicateTeams === true,
           requestedFour: saved.requestedFour ?? 4, requestedNatFive: saved.requestedNatFive ?? 6,
           activeStep: ["intro", "import", "data", "optimize"].includes(saved.activeStep) ? saved.activeStep : "intro", mode };
       } else state = { datasets: { siege: null, wgb: null }, dataset: null, copies: {}, copiesByMode: { siege: {}, wgb: {} }, cleanedLabels: 0, copyCap: 1,
-        allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, activeStep: "intro", mode: "siege" };
+        minimumBattles: 0, allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, activeStep: "intro", mode: "siege" };
     } catch (error) {
       state = { datasets: { siege: null, wgb: null }, dataset: null, copies: {}, copiesByMode: { siege: {}, wgb: {} }, cleanedLabels: 0, copyCap: 1,
-        allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, activeStep: "intro", mode: "siege" };
+        minimumBattles: 0, allowDuplicateTeams: false, requestedFour: 4, requestedNatFive: 6, activeStep: "intro", mode: "siege" };
       showNotice("Saved data could not be loaded. Paste the tables again. " + error.message, true);
     }
     render();
@@ -453,6 +491,12 @@
     $("#choose-siege").setAttribute("aria-pressed", String(state.mode === "siege"));
     $("#choose-wgb").setAttribute("aria-pressed", String(state.mode === "wgb"));
     $("#import-mode-title").textContent = state.mode === "siege" ? "Siege" : "World Guild Battle";
+    $("#complete-json-description").textContent = state.mode === "siege"
+      ? "Import or export one Siege JSON file containing the 4-star and all-defenses G1, G2, G3, and ALL tables."
+      : "Import or export one WGB JSON file containing its G1, G2, G3, and ALL tables; WGB has no rarity split.";
+    $("#complete-json-filename").textContent = "Export downloads " +
+      (state.mode === "siege" ? "siege-defense-data.json" : "wgb-defense-data.json") +
+      " to your browser’s configured download location.";
     $("#siege-rank-import").hidden = state.mode !== "siege";
     $("#wgb-rank-import").hidden = state.mode !== "wgb";
     $("#legacy-siege-import").hidden = state.mode !== "siege";
@@ -483,8 +527,10 @@
     $("#duplicate-team-option").hidden = !state.dataset || state.mode !== "siege";
     $("#allow-duplicate-teams").checked = state.allowDuplicateTeams;
     $("#availability-panel").hidden = !state.dataset;
-    $("#export-complete-json").hidden = state.mode !== "siege";
-    $("#export-complete-json").disabled = !state.datasets.siege || !state.datasets.siege.rankAware;
+    $("#export-complete-json").hidden = !state.dataset || !state.dataset.rankAware;
+    $("#export-complete-json").disabled = !state.dataset || !state.dataset.rankAware;
+    $("#export-complete-json").textContent = "Export complete " + (state.mode === "siege" ? "Siege" : "WGB") + " JSON";
+    $("#minimum-battles-settings").value = String(state.minimumBattles);
     $("#roster-copy-hint").hidden = state.mode !== "siege";
     renderCandidateTables();
     renderRoster();
@@ -652,6 +698,7 @@
       ? result.teams.length ? "Best found · not proven" : "Search limit reached" : "Infeasible";
     card.append(makeCell("h2", "Optimized defence options"));
     card.append(makeCell("p", state.dataset.snapshot + " · " + result.reason, "result-summary"));
+    card.append(minimumBattlesSelect("result-minimum-battles"));
     card.append(makeCell("p", "Click a monster name to adjust its available copies; optimize again to refresh this list. An asterisk marks inferred rank rates.", "hint"));
     card.append(makeCell("span", statusText, "status-pill" +
       (result.status !== "optimal" || partial ? " warning" : "")));
@@ -782,6 +829,7 @@
       await new Promise(resolve => setTimeout(resolve, 0));
       const solveOptions = {
         timeLimitMs: 5000,
+        minimumBattles: state.minimumBattles,
         allowDuplicateTeams: state.mode === "siege" && state.allowDuplicateTeams
       };
       const result = state.mode === "siege"
@@ -793,6 +841,8 @@
       const fourStarGroup = result.groups && result.groups.find(group => group.key === "fourStar");
       const eligibleFourStar = state.dataset.teams.some(team =>
         team.siegeCategory === "fourStar" &&
+        (state.dataset.rankAware
+          ? team.portfolioEvidence && team.portfolioEvidence.battles : team.battles) >= state.minimumBattles &&
         (!state.dataset.rankAware || Number.isInteger(team.portfolioEvidence && team.portfolioEvidence.scoreBps)));
       if (state.mode === "siege" && result.requested && result.requested.fourStar > 0 &&
           eligibleFourStar && (!fourStarGroup || fourStarGroup.teams.length < result.requested.fourStar)) {
@@ -832,6 +882,8 @@
       showNotice(result.status === "infeasible" ? state.dataset.rankAware &&
         !state.dataset.teams.some(team => Number.isInteger(team.portfolioEvidence && team.portfolioEvidence.scoreBps))
         ? "No candidate has eligible G1, G2, or G3 evidence. Check the imported rank tables and snapshot."
+        : state.minimumBattles > 0 && !hasCandidateAtBattleThreshold()
+          ? "No candidate meets the minimum battle count for its selected evidence. Lower the minimum or import more data."
         : "No defense can be built with the current copy counts." :
         result.status === "timed_out" ? "A feasible portfolio was found, but optimality was not proven." :
           partial ? "Closest available defense mix found. See the missing categories and fill suggestions below." :
@@ -849,7 +901,9 @@
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      const completeImport = parsed && parsed.format === "guild-defense-complete-siege-v1";
+      const completeImport = parsed && [
+        "guild-defense-complete-siege-v1", "guild-defense-complete-wgb-v1"
+      ].includes(parsed.format);
       const imported = completeImport
         ? GuildDefenseOptimizer.datasetFromCompleteJson(parsed)
         : { dataset: GuildDefenseOptimizer.validateDataset(parsed), cleanedLabels: 0 };
@@ -867,7 +921,8 @@
       state.activeStep = "data";
       render();
       $("#json-import-result").textContent = completeImport
-        ? "Imported complete Siege data: " + dataset.teams.length + " defenses." : "";
+        ? "Imported complete " + (mode === "siege" ? "Siege" : "WGB") +
+          " data: " + dataset.teams.length + " defenses." : "";
       showNotice("Imported " + dataset.teams.length + " defences. All listed monsters start marked available.", false);
     } catch (error) {
       $("#json-import-result").textContent = error.message;
@@ -878,19 +933,22 @@
   });
   $("#export-complete-json").addEventListener("click", () => {
     try {
-      const output = GuildDefenseOptimizer.completeSiegeJson(state.datasets.siege);
+      const siege = state.mode === "siege";
+      const output = siege
+        ? GuildDefenseOptimizer.completeSiegeJson(state.datasets.siege)
+        : GuildDefenseOptimizer.completeWgbJson(state.datasets.wgb);
       const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "siege-defense-data.json";
+      link.download = siege ? "siege-defense-data.json" : "wgb-defense-data.json";
       document.body.append(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      $("#json-import-result").textContent =
-        "Downloaded siege-defense-data.json to your browser’s configured download location.";
-      showNotice("Complete Siege JSON downloaded.", false);
+      $("#json-import-result").textContent = "Downloaded " + link.download +
+        " to your browser’s configured download location.";
+      showNotice("Complete " + (siege ? "Siege" : "WGB") + " JSON downloaded.", false);
     } catch (error) {
       $("#json-import-result").textContent = error.message;
       showNotice("JSON export failed: " + error.message, true);
@@ -1022,6 +1080,19 @@
     showNotice("Imported data cleared.", false);
   });
   $("#optimize").addEventListener("click", optimize);
+  document.addEventListener("change", event => {
+    if (!event.target.matches("[data-minimum-battles]")) return;
+    const value = Number(event.target.value);
+    if (!Number.isInteger(value) || value < 0) return;
+    state.minimumBattles = value;
+    $("#minimum-battles-settings").value = String(value);
+    save();
+    if (state.activeStep === "optimize") optimize();
+    else {
+      $("#results").replaceChildren();
+      showNotice("Minimum battle count updated. Optimize to refresh the portfolio.", false);
+    }
+  });
   $("#allow-duplicate-teams").addEventListener("change", () => {
     state.allowDuplicateTeams = $("#allow-duplicate-teams").checked;
     $("#results").replaceChildren();

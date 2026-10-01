@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { solve, solveClosest, suggestFillTeams, validateDataset, parsePasteTable, datasetFromPastedTables,
-  datasetFromRankPastedTables, datasetFromCompleteJson, completeSiegeJson, wilsonInterval } = require("../optimizer.js");
+  datasetFromRankPastedTables, datasetFromCompleteJson, completeSiegeJson, completeWgbJson, wilsonInterval } = require("../optimizer.js");
 
 const data = {
   title: "test",
@@ -152,6 +152,58 @@ test("subtracts known 4-star defenses across all eight Siege tables", () => {
   assert.equal(reimported.dataset.sourceTables.all.G1.length, 2);
   const restored = validateDataset(JSON.parse(JSON.stringify(imported.dataset)));
   assert.equal(completeSiegeJson(restored).allTables.G1.length, 2);
+});
+
+test("round-trips complete WGB JSON with exactly four rank tables", () => {
+  const table = rows => [
+    "Monster Leader\tMonster 2\tMonster 3\tBattles\tWR%",
+    ...rows.map(row => row.join("\t"))
+  ].join("\n");
+  const imported = datasetFromRankPastedTables({
+    mode: "wgb",
+    snapshot: "WGB test snapshot",
+    tables: {
+      G1: table([["Leader", "Unit A", "Unit B", "300", "20.0%"]]),
+      G2: table([["Leader", "Unit A", "Unit B", "200", "18.0%"]]),
+      G3: table([["Leader", "Unit A", "Unit B", "100", "15.0%"]]),
+      ALL: table([["Leader", "Unit A", "Unit B", "600", "17.0%"]])
+    }
+  });
+  const exported = completeWgbJson(imported.dataset);
+  assert.equal(exported.format, "guild-defense-complete-wgb-v1");
+  assert.deepEqual(Object.keys(exported.tables), ["G1", "G2", "G3", "ALL"]);
+  assert.equal(exported.tables.G1[0].battles, 300);
+  const reimported = datasetFromCompleteJson(exported);
+  assert.equal(reimported.dataset.mode, "wgb");
+  assert.equal(reimported.dataset.teams[0].rankData.G2.battles, 200);
+  assert.equal(reimported.dataset.teams[0].rankTablesProvided.length, 4);
+});
+
+test("minimum battles filters rank-aware candidates using selected evidence support", () => {
+  const table = rows => [
+    "Monster Leader\tMonster 2\tMonster 3\tBattles\tWR%",
+    ...rows.map(row => row.join("\t"))
+  ].join("\n");
+  const imported = datasetFromRankPastedTables({
+    mode: "wgb",
+    tables: {
+      G1: table([
+        ["Low", "Low B", "Low C", "100", "30.0%"],
+        ["High", "High B", "High C", "300", "20.0%"]
+      ]),
+      G2: table([["Low", "Low B", "Low C", "100", "30.0%"]]),
+      G3: table([["Low", "Low B", "Low C", "100", "30.0%"]]),
+      ALL: table([["Low", "Low B", "Low C", "300", "30.0%"]])
+    }
+  }).dataset;
+  const roster = Object.fromEntries(imported.monsters.map(monster =>
+    [monster.id, { owned: 1, maxAdditional: 0, maxCopies: 1 }]));
+  const result = solve(imported, roster, "wgb", 0, {
+    requirements: { any: 1 }, minimumBattles: 200, timeLimitMs: 5000
+  });
+  assert.equal(result.status, "optimal");
+  assert.equal(result.teams[0].leader, "High");
+  assert.throws(() => solve(imported, roster, "wgb", 0, { minimumBattles: -1 }), /Minimum battles/);
 });
 
 test("applies evidence priority and calculates conservative inferred G2 context", () => {
@@ -362,9 +414,8 @@ test("respects entered copy counts, including multiple copies of nat-five monste
   const result = solve(oneTeam, roster, "wgb", 0, {
     requirements: { any: 2 }, allowDuplicateTeams: true, timeLimitMs: 5000
   });
-  assert.equal(result.status, "optimal");
-  assert.equal(result.teams.length, 2);
-  assert.deepEqual(result.teams.map(team => team.id), [result.teams[0].id, result.teams[0].id]);
+  assert.equal(result.status, "infeasible");
+  assert.equal(result.teams.length, 0);
 });
 
 test("finds full portfolios with larger lower-rarity copy caps without hitting the search limit", () => {

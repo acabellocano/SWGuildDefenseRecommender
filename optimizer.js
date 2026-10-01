@@ -507,10 +507,6 @@
   }
 
   function datasetFromCompleteJson(input) {
-    if (!input || input.format !== "guild-defense-complete-siege-v1" || input.mode !== "siege" ||
-        !input.fourStarTables || !input.allTables) {
-      throw new Error("Expected a complete Siege JSON file with fourStarTables and allTables.");
-    }
     const toPasteTables = (tables, label) => {
       if (!tables || typeof tables !== "object" || Array.isArray(tables) ||
           Object.keys(tables).some(rank => !RANKS.includes(rank))) {
@@ -540,6 +536,17 @@
         ].join("\n")];
       }));
     };
+    if (input && input.format === "guild-defense-complete-wgb-v1" && input.mode === "wgb") {
+      return datasetFromRankPastedTables({
+        mode: "wgb",
+        snapshot: input.snapshot,
+        tables: toPasteTables(input.tables, "WGB tables")
+      });
+    }
+    if (!input || input.format !== "guild-defense-complete-siege-v1" || input.mode !== "siege" ||
+        !input.fourStarTables || !input.allTables) {
+      throw new Error("Expected a complete Siege JSON file with fourStarTables and allTables, or complete WGB JSON with tables.");
+    }
     return datasetFromRankPastedTables({
       mode: "siege",
       snapshot: input.snapshot,
@@ -577,6 +584,27 @@
       snapshot: dataset.snapshot,
       fourStarTables: outputTables("fourStar"),
       allTables: outputTables("all")
+    };
+  }
+
+  function completeWgbJson(datasetInput) {
+    const dataset = validateDataset(datasetInput);
+    if (dataset.mode !== "wgb" || !dataset.rankAware) {
+      throw new Error("Complete JSON export requires imported rank-aware WGB data.");
+    }
+    return {
+      format: "guild-defense-complete-wgb-v1",
+      mode: "wgb",
+      snapshot: dataset.snapshot,
+      tables: Object.fromEntries(RANKS.map(rank => [rank, dataset.teams.flatMap(team => {
+        const sample = team.rankData && team.rankData[rank];
+        return sample ? [{
+          names: [team.leader, ...team.memberIds],
+          battles: sample.battles,
+          winRate: sample.winRate,
+          precision: sample.precision
+        }] : [];
+      })]))
     };
   }
 
@@ -661,16 +689,27 @@
     return dataset.rankAware ? team.portfolioEvidence && team.portfolioEvidence.scoreBps : team.winRateBps;
   }
 
+  function meetsMinimumBattles(dataset, team, minimum) {
+    const battles = dataset.rankAware
+      ? team.portfolioEvidence && team.portfolioEvidence.battles : team.battles;
+    return Number.isInteger(battles) && battles >= minimum;
+  }
+
   function solve(datasetInput, rosterInput, mode, budget, options) {
     const dataset = validateDataset(datasetInput);
     if (!Number.isInteger(budget) || budget < 0) throw new Error("The extra-copy budget must be a non-negative whole number.");
     const opts = options || {};
+    const minimumBattles = opts.minimumBattles === undefined ? 0 : opts.minimumBattles;
+    if (!Number.isInteger(minimumBattles) || minimumBattles < 0) {
+      throw new Error("Minimum battles must be a non-negative whole number.");
+    }
     const roster = normalizeRoster(dataset, rosterInput);
     const groups = makeGroups(dataset, mode, opts.requirements);
     for (const group of groups) {
       if (!Number.isInteger(group.count) || group.count < 0) throw new Error("Team requirements must be non-negative whole numbers.");
       group.teams = group.teams.filter(team =>
         team.memberIds.concat(team.leader).every(id => roster.get(id).owned > 0) &&
+        meetsMinimumBattles(dataset, team, minimumBattles) &&
         (!dataset.rankAware || Number.isInteger(objectiveBps(dataset, team))));
       group.teams.sort((a, b) =>
         objectiveBps(dataset, b) - objectiveBps(dataset, a) || a.id.localeCompare(b.id));
@@ -682,7 +721,7 @@
 
     const usage = new Map();
     const selected = groups.map(() => []);
-    const allowDuplicateTeams = opts.allowDuplicateTeams === true;
+    const allowDuplicateTeams = mode === "siege" && opts.allowDuplicateTeams === true;
     let best = null;
     let nodes = 0;
     let timedOut = false;
@@ -825,11 +864,18 @@
         wantedFour + wantedNatFive > 10) {
       throw new Error("Requested Siege defenses must be non-negative whole numbers with a combined maximum of 10.");
     }
+    const minimumBattles = opts.minimumBattles === undefined ? 0 : opts.minimumBattles;
+    if (!Number.isInteger(minimumBattles) || minimumBattles < 0) {
+      throw new Error("Minimum battles must be a non-negative whole number.");
+    }
     if (dataset.rankAware && !dataset.teams.some(team =>
+      meetsMinimumBattles(dataset, team, minimumBattles) &&
       Number.isInteger(objectiveBps(dataset, team)))) {
       return {
         status: "infeasible",
-        reason: "No defense has eligible G1, G2, or G3 evidence.",
+        reason: minimumBattles
+          ? "No defense meets the minimum battle count with eligible rank evidence."
+          : "No defense has eligible G1, G2, or G3 evidence.",
         teams: [],
         groups: [],
         totalWinRateBps: 0,
@@ -897,6 +943,10 @@
     const dataset = validateDataset(datasetInput);
     const roster = normalizeRoster(dataset, rosterInput);
     const opts = options || {};
+    const minimumBattles = opts.minimumBattles === undefined ? 0 : opts.minimumBattles;
+    if (!Number.isInteger(minimumBattles) || minimumBattles < 0) {
+      throw new Error("Minimum battles must be a non-negative whole number.");
+    }
     const usage = new Map();
     for (const team of result.teams) {
       for (const id of [team.leader, ...team.memberIds]) usage.set(id, (usage.get(id) || 0) + 1);
@@ -905,7 +955,8 @@
     let extraBuilds = result.additionalCopyCount || 0;
     const suggestions = [];
     const candidates = dataset.teams.filter(team =>
-      !dataset.rankAware || Number.isInteger(objectiveBps(dataset, team))).sort((a, b) =>
+      meetsMinimumBattles(dataset, team, minimumBattles) &&
+      (!dataset.rankAware || Number.isInteger(objectiveBps(dataset, team)))).sort((a, b) =>
       objectiveBps(dataset, b) - objectiveBps(dataset, a) || a.id.localeCompare(b.id));
     while (result.teams.length + suggestions.length < targetCount) {
       const next = candidates.find(team => {
@@ -941,6 +992,7 @@
     datasetFromRankPastedTables,
     datasetFromCompleteJson,
     completeSiegeJson,
+    completeWgbJson,
     wilsonInterval,
     makeG1Evidence,
     solve,

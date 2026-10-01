@@ -100,6 +100,10 @@ h2 { font-size: 1.18rem; margin: 0 0 6px; }
 .empty-table-message { color: var(--muted); }
 .empty-table .table-scroll { background: #f8faf8; }
 .settings-row { display: flex; gap: 18px; align-items: end; flex-wrap: wrap; }
+.minimum-battles-control { display: flex; flex-direction: column; gap: 5px; color: #53645b; font-size: .82rem; }
+.minimum-battles-control select { min-height: 40px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); }
+.result-minimum-battles { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: var(--muted); font-size: .82rem; }
+.result-minimum-battles select { padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--text); }
 .copy-tabs { display: flex; gap: 3px; padding: 3px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 9px; }
 .copy-tabs button { border: 0; border-radius: 6px; padding: 8px 11px; background: transparent; color: #53645b; font-weight: 650; cursor: pointer; }
 .copy-tabs button:hover { background: #fff; }
