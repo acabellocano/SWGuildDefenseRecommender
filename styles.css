@@ -154,6 +154,30 @@ td input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--green
 .suggested-team { border-style: dashed; background: var(--surface-tint); }
 .team-name { font-weight: 700; }
 .team-meta { margin-top: 5px; font-size: .8rem; color: var(--muted); }
+.team-evidence { display: grid; gap: 8px; margin-top: 10px; }
+.team-evidence-primary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+.team-evidence-primary strong { font-size: 1.15rem; letter-spacing: -.02em; }
+.rank-pill { padding: 3px 7px; border-radius: 5px; background: var(--surface-soft); color: var(--green-dark); font-size: .7rem; font-weight: 800; letter-spacing: .04em; }
+.evidence-label { color: var(--muted); font-size: .76rem; }
+.team-evidence-score { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; padding: 7px 9px; border-left: 3px solid var(--green); border-radius: 0 6px 6px 0; background: var(--surface-tint); }
+.team-evidence-score strong { color: var(--green-dark); font-size: .95rem; }
+.team-evidence-score > span { color: var(--muted); font-size: .76rem; }
+.team-evidence-score .fallback-note { flex-basis: 100%; }
+.team-evidence-context { color: var(--muted); font-size: .76rem; }
+.team-evidence-context summary { width: fit-content; cursor: pointer; color: var(--green-dark); font-weight: 650; }
+.team-evidence-context summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.rank-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.rank-chip { padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); font-size: .7rem; }
+.rank-chip.selected { border-color: var(--green); color: var(--green-dark); font-weight: 700; }
+.evidence-note { margin: 7px 0 0; font-size: .74rem; }
+.cap-scenario-panel { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.cap-scenario-panel h3 { margin: 0 0 5px; font-size: .98rem; }
+.cap-scenario-panel > .hint { margin: 0 0 10px; }
+.cap-scenarios-scroll { max-height: 270px; }
+.cap-scenarios { min-width: 560px; }
+.cap-scenarios td, .cap-scenarios th { padding: 8px 10px; }
+.cap-scenarios tbody th { text-transform: none; letter-spacing: 0; }
+.cap-scenarios .recommended-cap { background: var(--surface-tint); color: var(--green-dark); font-weight: 700; }
 .builds { margin: 12px 0; font-size: .88rem; }
 .status-pill { display: inline-block; font-size: .75rem; font-weight: 750; border-radius: 20px; padding: 4px 9px; background: #eaf4ee; color: var(--green-dark); }
 .status-pill.warning { background: #fff2d9; color: #795000; }
@@ -175,6 +199,8 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .table-scroll { scrollbar-color: #a6b9ae transparent; scrollbar-width: thin; }
 tbody tr:not(.group-row):hover { background: var(--surface-tint); }
 .team:hover { border-color: #abcbbb; box-shadow: 0 4px 12px #2033280c; }
+.monster-copy-control label { cursor: default; }
+.monster-copy-control input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
 :root[data-color-scheme="dark"] {
   --green: #78c8a5;

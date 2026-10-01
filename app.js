@@ -70,7 +70,51 @@
     }
   }
 
-  function renderInfeasibility(result, diagnostic) {
+  function renderCapScenarios(capScenarios) {
+    if (!capScenarios || !capScenarios.length) return null;
+    const section = document.createElement("section");
+    section.className = "cap-scenario-panel";
+    section.append(makeCell("h3", "4-star duplicate build options"));
+    section.append(makeCell("p", "Each row shows the best portfolio found at that copy limit and which extra monsters it needs.", "hint"));
+    const table = document.createElement("table");
+    table.className = "cap-scenarios";
+    const head = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    for (const label of ["Copy limit", "Portfolio", "Additional copies to build"])
+      headerRow.append(makeCell("th", label));
+    head.append(headerRow);
+    const body = document.createElement("tbody");
+    for (const scenario of capScenarios) {
+      const row = document.createElement("tr");
+      row.append(makeCell("th", scenario.cap + (scenario.cap === 1 ? " copy" : " copies")));
+      row.append(makeCell("td", scenario.result.teams.length + " / " + scenario.target +
+        (scenario.result.status === "timed_out" ? " · search limit" : "")));
+      row.append(makeCell("td", formatCopies(scenario.result.additionalCopies)));
+      if (scenario.recommended) row.className = "recommended-cap";
+      body.append(row);
+    }
+    table.append(head, body);
+    const wrapper = document.createElement("div");
+    wrapper.className = "table-scroll cap-scenarios-scroll";
+    wrapper.append(table);
+    section.append(wrapper);
+    const recommended = capScenarios.find(scenario => scenario.recommended);
+    const earlierTimedOut = recommended && capScenarios.some(scenario =>
+      scenario.cap < recommended.cap && scenario.result.status === "timed_out");
+    section.append(makeCell("p", recommended
+      ? (recommended.complete ? (earlierTimedOut ? "Lowest tested limit found to complete: " :
+        "Recommended: the ") + recommended.cap +
+        "-copy limit completes the requested portfolio. Build " :
+        "Best available: the " + recommended.cap + "-copy limit supports " +
+        recommended.result.teams.length + " / " + recommended.target + " defenses. Build ") +
+        formatCopies(recommended.result.additionalCopies) + "." +
+        (earlierTimedOut ? " A lower-copy search timed out, so it may also be feasible." : "")
+      : "None of the tested copy limits completed the requested portfolio; compare the build plans above and check missing monsters.",
+      recommended ? "builds" : "hint"));
+    return section;
+  }
+
+  function renderInfeasibility(result, diagnostic, capScenarios) {
     const section = document.createElement("div");
     section.className = "infeasibility";
     if (diagnostic) {
@@ -85,7 +129,7 @@
     section.append(makeCell("h3", "What is blocking a complete portfolio?"));
     if (result.status === "timed_out") {
       section.append(makeCell("p", "The optimizer hit its search limit before it found a complete portfolio. Try a higher copy tab or adjust availability, then optimize again.", "result-summary"));
-      return section;
+      if (!capScenarios || !capScenarios.length) return section;
     }
     if (state.dataset.rankAware && !state.dataset.teams.some(team =>
       Number.isInteger(team.portfolioEvidence && team.portfolioEvidence.scoreBps))) {
@@ -96,7 +140,15 @@
       section.append(makeCell("p", "These unavailable monsters block the most candidate teams: " +
         missing.map(item => item.name + " (" + item.teams + ")").join(", ") + ".", "result-summary"));
     }
-    if (state.mode === "siege" && state.copyCap < 5) {
+    const capPanel = renderCapScenarios(capScenarios);
+    if (capPanel) section.append(capPanel);
+    if (capScenarios && capScenarios.length) {
+      const natFiveGroup = result.groups && result.groups.find(group => group.key === "natFive");
+      if (result.requested.natFive > 0 &&
+          (!natFiveGroup || natFiveGroup.teams.length < result.requested.natFive)) {
+        section.append(makeCell("p", "Some requested all-defenses remainder teams are still blocked by the roster or available candidate data.", "hint"));
+      }
+    } else if (state.mode === "siege" && state.copyCap < 5) {
       section.append(makeCell("p", "No complete portfolio was found through the 5-copy limit. Check missing monsters or enter more usable copies.", "hint"));
     } else {
       section.append(makeCell("p", "No complete portfolio fits the available monsters and copy counts. Restore a missing monster or increase its copy count if you own duplicates.", "hint"));
@@ -182,6 +234,70 @@
     }
     if (g2 && g3) parts.push("G2→G3 " + (g3.winRate - g2.winRate).toFixed(2) + " pp (descriptive)");
     return parts.join(" · ");
+  }
+
+  function renderTeamEvidence(team) {
+    const evidence = document.createElement("div");
+    evidence.className = "team-evidence";
+    const g1 = team.g1Evidence;
+    const primary = document.createElement("div");
+    primary.className = "team-evidence-primary";
+    primary.append(makeCell("span", "G1", "rank-pill"));
+    primary.append(makeCell("strong", g1.status === "unknown"
+      ? "Not reported" : confidenceText(g1.winRate) + (g1.status === "inferred" ? "*" : "")));
+    primary.append(makeCell("span", g1.status === "unknown"
+      ? "No direct or inferable G1 sample" : (g1.status === "inferred" ? "inferred" : "measured") +
+        " · " + g1.battles.toLocaleString() + " battles", "evidence-label"));
+    evidence.append(primary);
+
+    const selected = team.portfolioEvidence;
+    if (selected && selected.scoreBps !== undefined) {
+      const score = document.createElement("div");
+      score.className = "team-evidence-score";
+      score.append(makeCell("strong", confidenceText(selected.conservativeRate)));
+      score.append(makeCell("span", "conservative " + selected.rank + " score"));
+      if (selected.rank !== "G1") {
+        score.append(makeCell("span", "G1 unavailable · fallback to " + selected.rank +
+          " " + selected.status, "fallback-note"));
+      }
+      evidence.append(score);
+    }
+
+    const context = document.createElement("details");
+    context.className = "team-evidence-context";
+    context.append(makeCell("summary", "Why this defense?"));
+    const ranks = document.createElement("div");
+    ranks.className = "rank-chips";
+    for (const rank of ["G1", "G2", "G3", "ALL"]) {
+      const sample = rank === "G1" ? (g1.status === "unknown" ? null : g1) :
+        rank === "G2" && team.g2Evidence ? team.g2Evidence :
+          team.rankData && team.rankData[rank] ? {
+            ...team.rankData[rank], rank, status: "measured"
+          } : null;
+      if (!sample) continue;
+      const chip = makeCell("span", rank + " " + confidenceText(sample.winRate) +
+        (sample.status === "inferred" ? "*" : "") + " · " + sample.battles.toLocaleString(),
+        "rank-chip" + (selected && selected.rank === rank ? " selected" : ""));
+      chip.title = sample.status === "inferred" ? "Inferred from a complete rank-table residual" : "Measured rank sample";
+      ranks.append(chip);
+    }
+    if (ranks.childElementCount) context.append(ranks);
+    if (selected && selected.status === "inferred") {
+      context.append(makeCell("p", selected.rank + " inferred range: " +
+        confidenceText(selected.roundingRange.lower) + "–" +
+        confidenceText(selected.roundingRange.upper) + ".", "evidence-note"));
+    } else if (selected && selected.wilson95) {
+      context.append(makeCell("p", selected.rank + " 95% Wilson interval: " +
+        confidenceText(selected.wilson95.lower) + "–" +
+        confidenceText(selected.wilson95.upper) + ".", "evidence-note"));
+    }
+    if (team.rankData && team.rankData.G2 && team.rankData.G3) {
+      context.append(makeCell("p", "G2→G3: " +
+        (team.rankData.G3.winRate - team.rankData.G2.winRate).toFixed(2) +
+        " percentage points (descriptive).", "evidence-note"));
+    }
+    evidence.append(context);
+    return evidence;
   }
 
   function initialize() {
@@ -527,7 +643,7 @@
     return element;
   }
 
-  function renderResult(result, diagnostic, suggestions) {
+  function renderResult(result, diagnostic, suggestions, capScenarios) {
     const card = document.createElement("article");
     card.className = "result-card";
     const requestedTotal = result.requested ? result.requested.fourStar + result.requested.natFive : null;
@@ -536,11 +652,11 @@
       ? result.teams.length ? "Best found · not proven" : "Search limit reached" : "Infeasible";
     card.append(makeCell("h2", "Optimized defence options"));
     card.append(makeCell("p", state.dataset.snapshot + " · " + result.reason, "result-summary"));
-    card.append(makeCell("p", "Click a monster name to adjust its available copies; optimize again to refresh this list.", "hint"));
+    card.append(makeCell("p", "Click a monster name to adjust its available copies; optimize again to refresh this list. An asterisk marks inferred rank rates.", "hint"));
     card.append(makeCell("span", statusText, "status-pill" +
       (result.status !== "optimal" || partial ? " warning" : "")));
     if (!result.teams.length) {
-      card.append(renderInfeasibility(result, diagnostic));
+      card.append(renderInfeasibility(result, diagnostic, capScenarios));
       return card;
     }
 
@@ -586,9 +702,9 @@
         nameList.append(makeMonsterCopyControl(monster.id, monster.name));
       });
       tile.append(nameList);
-      tile.append(makeCell("div", state.dataset.rankAware
-        ? rankEvidenceText(team)
-        : (team.category === "fourStar" ? "4-star list" : team.category === "natFive" ? "All-defences remainder" : "WGB") +
+      tile.append(state.dataset.rankAware
+        ? renderTeamEvidence(team)
+        : makeCell("div", (team.category === "fourStar" ? "4-star list" : team.category === "natFive" ? "All-defences remainder" : "WGB") +
           " · " + (team.winRateBps / 100).toFixed(2) + "% · " + team.battles.toLocaleString() + " battles",
         "team-meta"));
       list.append(tile);
@@ -620,9 +736,9 @@
             nameList.append(makeMonsterCopyControl(monster.id, monster.name));
           });
           tile.append(nameList);
-          tile.append(makeCell("div", state.dataset.rankAware
-            ? rankEvidenceText(team)
-            : (team.siegeCategory === "fourStar" ? "4-star list" : "All-defences remainder") +
+          tile.append(state.dataset.rankAware
+            ? renderTeamEvidence(team)
+            : makeCell("div", (team.siegeCategory === "fourStar" ? "4-star list" : "All-defences remainder") +
               " · " + (team.winRateBps / 100).toFixed(2) + "% · " + team.battles.toLocaleString() + " battles",
             "team-meta"));
           fillList.append(tile);
@@ -633,6 +749,8 @@
         extra.append(makeCell("p", (remaining - availableSuggestions.length) +
           " slot(s) still cannot be filled with the current roster and copy limits.", "hint"));
       }
+      const capPanel = renderCapScenarios(capScenarios);
+      if (capPanel) extra.append(capPanel);
       card.append(extra);
     }
     return card;
@@ -671,10 +789,44 @@
           ...solveOptions, requirements: { fourStar: state.requestedFour, natFive: state.requestedNatFive }
         })
         : GuildDefenseOptimizer.solve(state.dataset, roster, state.mode, 30, solveOptions);
+      let capScenarios = null;
+      const fourStarGroup = result.groups && result.groups.find(group => group.key === "fourStar");
+      const eligibleFourStar = state.dataset.teams.some(team =>
+        team.siegeCategory === "fourStar" &&
+        (!state.dataset.rankAware || Number.isInteger(team.portfolioEvidence && team.portfolioEvidence.scoreBps)));
+      if (state.mode === "siege" && result.requested && result.requested.fourStar > 0 &&
+          eligibleFourStar && (!fourStarGroup || fourStarGroup.teams.length < result.requested.fourStar)) {
+        const target = result.requested.fourStar + result.requested.natFive;
+        const scenarios = [];
+        for (let cap = 1; cap <= 5; cap++) {
+          showNotice("Checking Siege portfolios at " + cap + "-copy limit (" + cap + " of 5)…", false);
+          await new Promise(resolve => setTimeout(resolve, 0));
+          const capResult = cap === state.copyCap ? result :
+            GuildDefenseOptimizer.solveClosest(state.dataset, makeSolverRoster(cap), state.mode, 30, {
+              ...solveOptions,
+              timeLimitMs: 1200,
+              perAllocationTimeMs: 300,
+              requirements: { fourStar: state.requestedFour, natFive: state.requestedNatFive }
+            });
+          scenarios.push({
+            cap,
+            target,
+            result: capResult,
+            complete: capResult.teams.length === target
+          });
+        }
+        const completeCap = scenarios.find(scenario => scenario.complete);
+        const recommended = completeCap || scenarios.slice().sort((a, b) =>
+          b.result.teams.length - a.result.teams.length ||
+          a.result.additionalCopyCount - b.result.additionalCopyCount ||
+          a.cap - b.cap)[0];
+        if (recommended) recommended.recommended = true;
+        capScenarios = scenarios;
+      }
       const suggestions = state.mode === "siege" && result.teams.length
         ? GuildDefenseOptimizer.suggestFillTeams(state.dataset, result, roster,
           state.requestedFour + state.requestedNatFive, 30, solveOptions) : [];
-      $("#results").replaceChildren(renderResult(result, null, suggestions));
+      $("#results").replaceChildren(renderResult(result, null, suggestions, capScenarios));
       const partial = result.requested &&
         result.teams.length < result.requested.fourStar + result.requested.natFive;
       showNotice(result.status === "infeasible" ? state.dataset.rankAware &&
@@ -919,6 +1071,12 @@
     });
   }
   $("#monster-search").addEventListener("input", filterMonsterList);
+  document.addEventListener("click", event => {
+    const clickedControl = event.target.closest(".monster-copy-control");
+    document.querySelectorAll(".monster-copy-control[open]").forEach(control => {
+      if (control !== clickedControl) control.open = false;
+    });
+  });
   $("#select-all").addEventListener("click", () => {
     state.copies = Object.fromEntries(state.dataset.monsters.map(monster => [monster.id, 1]));
     renderRoster();
