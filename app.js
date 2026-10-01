@@ -479,6 +479,45 @@
     if (!state.dataset) return;
     const available = state.dataset.monsters.filter(monster => (state.copies[monster.id] ?? 1) > 0).length;
     $("#availability-count").textContent = available + " of " + state.dataset.monsters.length + " monsters available";
+    $("#roster-title").textContent = "All monster availability · " + available + " available";
+  }
+
+  function setMonsterCopies(monsterId, rawValue, input) {
+    const count = Number(rawValue);
+    const max = state.mode === "wgb" ? 1 : 99;
+    if (!Number.isInteger(count) || count < 0 || count > max) {
+      showNotice("Copy counts must be whole numbers from 0 to " + max + ".", true);
+      input.value = String(state.copies[monsterId] ?? 1);
+      return false;
+    }
+    state.copies[monsterId] = count;
+    document.querySelectorAll("[data-monster-copy-id]").forEach(field => {
+      if (field.dataset.monsterCopyId === monsterId) field.value = String(count);
+    });
+    renderRoster();
+    save();
+    showNotice("Availability updated. Optimize again to refresh the proposed defenses.", false);
+    return true;
+  }
+
+  function makeMonsterCopyControl(monsterId, name) {
+    const details = document.createElement("details");
+    details.className = "monster-copy-control";
+    const summary = makeCell("summary", name);
+    summary.title = "Click to adjust availability";
+    const label = makeCell("label", state.mode === "wgb" ? "Available (0 or 1)" : "Copies available");
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = "0";
+    input.max = state.mode === "wgb" ? "1" : "99";
+    input.step = "1";
+    input.value = String(state.copies[monsterId] ?? 1);
+    input.dataset.monsterCopyId = monsterId;
+    input.setAttribute("aria-label", (state.mode === "wgb" ? "Available" : "Copies available") + " for " + name);
+    input.addEventListener("change", () => setMonsterCopies(monsterId, input.value, input));
+    label.append(input);
+    details.append(summary, label);
+    return details;
   }
 
   function makeCell(tag, text, className) {
@@ -497,6 +536,7 @@
       ? result.teams.length ? "Best found · not proven" : "Search limit reached" : "Infeasible";
     card.append(makeCell("h2", "Optimized defence options"));
     card.append(makeCell("p", state.dataset.snapshot + " · " + result.reason, "result-summary"));
+    card.append(makeCell("p", "Click a monster name to adjust its available copies; optimize again to refresh this list.", "hint"));
     card.append(makeCell("span", statusText, "status-pill" +
       (result.status !== "optimal" || partial ? " warning" : "")));
     if (!result.teams.length) {
@@ -536,9 +576,16 @@
     teams.forEach((team, index) => {
       const tile = document.createElement("div");
       tile.className = "team";
-      const names = [team.leader, ...team.memberIds].map(id =>
-        state.dataset.monsters.find(monster => monster.id === id).name);
-      tile.append(makeCell("div", (index + 1) + ". " + names.join(" / "), "team-name"));
+      const names = [team.leader, ...team.memberIds].map(id => ({
+        id, name: state.dataset.monsters.find(monster => monster.id === id).name
+      }));
+      const nameList = makeCell("div", "", "team-name");
+      nameList.append(document.createTextNode((index + 1) + ". "));
+      names.forEach((monster, nameIndex) => {
+        if (nameIndex) nameList.append(document.createTextNode(" / "));
+        nameList.append(makeMonsterCopyControl(monster.id, monster.name));
+      });
+      tile.append(nameList);
       tile.append(makeCell("div", state.dataset.rankAware
         ? rankEvidenceText(team)
         : (team.category === "fourStar" ? "4-star list" : team.category === "natFive" ? "All-defences remainder" : "WGB") +
@@ -563,9 +610,16 @@
         availableSuggestions.forEach((team, index) => {
           const tile = document.createElement("div");
           tile.className = "team suggested-team";
-          const names = [team.leader, ...team.memberIds].map(id =>
-            state.dataset.monsters.find(monster => monster.id === id).name);
-          tile.append(makeCell("div", "Suggestion " + (index + 1) + ". " + names.join(" / "), "team-name"));
+          const names = [team.leader, ...team.memberIds].map(id => ({
+            id, name: state.dataset.monsters.find(monster => monster.id === id).name
+          }));
+          const nameList = makeCell("div", "", "team-name");
+          nameList.append(document.createTextNode("Suggestion " + (index + 1) + ". "));
+          names.forEach((monster, nameIndex) => {
+            if (nameIndex) nameList.append(document.createTextNode(" / "));
+            nameList.append(makeMonsterCopyControl(monster.id, monster.name));
+          });
+          tile.append(nameList);
           tile.append(makeCell("div", state.dataset.rankAware
             ? rankEvidenceText(team)
             : (team.siegeCategory === "fourStar" ? "4-star list" : "All-defences remainder") +
@@ -682,8 +736,9 @@
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      $("#json-import-result").textContent = "Exported all rank tables for both Siege categories.";
-      showNotice("Complete Siege JSON exported.", false);
+      $("#json-import-result").textContent =
+        "Downloaded siege-defense-data.json to your browser’s configured download location.";
+      showNotice("Complete Siege JSON downloaded.", false);
     } catch (error) {
       $("#json-import-result").textContent = error.message;
       showNotice("JSON export failed: " + error.message, true);

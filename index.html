@@ -129,6 +129,7 @@
         <details class="complete-json-import">
           <summary>Complete JSON import/export</summary>
           <p class="hint">Import or export one Siege JSON file containing the 4-star and all-defenses G1, G2, G3, and ALL tables.</p>
+          <p class="hint">Export downloads <code>siege-defense-data.json</code> to your browser’s configured download location.</p>
           <div class="paste-actions">
             <button id="export-complete-json" type="button" class="secondary-button">Export complete Siege JSON</button>
             <label class="import-button">Choose JSON file
@@ -232,13 +233,12 @@
 
       <section id="results" aria-live="polite" aria-label="Optimization results"></section>
 
-      <section id="availability-panel" class="panel roster-panel" aria-labelledby="roster-title" hidden>
-        <div class="section-heading">
-          <div>
-            <h2 id="roster-title">Exclude monsters you don’t have</h2>
-            <p id="roster-description">Within each group, most-used monsters appear first.</p>
-          </div>
-        </div>
+      <details id="availability-panel" class="panel roster-panel" hidden>
+        <summary class="roster-summary">
+          <h2 id="roster-title">All monster availability</h2>
+          <p id="roster-description">Within each group, most-used monsters appear first.</p>
+        </summary>
+        <p class="hint">Quick-adjust copies from any suggested defense above, or search all monsters here.</p>
         <div class="availability-tools">
           <input id="monster-search" type="search" placeholder="Find a monster…" aria-label="Find a monster to exclude">
           <span id="availability-count" class="hint"></span>
@@ -261,7 +261,7 @@
           </table>
         </div>
         <p id="roster-copy-hint" class="hint">Copies defaults to 1; set to 0 if you do not own the monster, or enter copies you already have. The selected tab sets the maximum; the optimizer reports extra copies to build.</p>
-      </section>
+      </details>
       </section>
       <footer>Historical win rates and rank gradients describe the logged sample; they are not predictions or causal effects. Wilson bounds capture sampling uncertainty, not contributor-selection bias.</footer>
     </main>
